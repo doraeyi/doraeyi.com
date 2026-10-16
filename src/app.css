@@ -1,0 +1,75 @@
+:root {
+	--bg: #06060b;
+	--surface: #0f0e18;
+	--line: rgb(255 255 255 / 0.09);
+	--text: #f1eeff;
+	--text-soft: #c4c0dc;
+	--muted: #8a86a6;
+	--violet: #7c5cff;
+	--cyan: #00d1ff;
+	--pink: #ff4fa3;
+	--font-display: 'Syne', 'Noto Sans TC', system-ui, sans-serif;
+	--font-body: 'Manrope', 'Noto Sans TC', system-ui, sans-serif;
+	--font-mono: 'JetBrains Mono', ui-monospace, monospace;
+	--pad: clamp(16px, 5vw, 72px);
+	color-scheme: dark;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html {
+	scroll-behavior: smooth;
+	background: var(--bg);
+}
+
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--text);
+	font-family: var(--font-body);
+	font-size: 16px;
+	line-height: 1.6;
+	-webkit-font-smoothing: antialiased;
+	overflow-x: hidden;
+}
+
+::selection {
+	background: var(--violet);
+	color: #fff;
+}
+
+a {
+	color: inherit;
+}
+
+:focus-visible {
+	outline: 2px solid var(--cyan);
+	outline-offset: 3px;
+	border-radius: 6px;
+}
+
+/* 捲到才出場 */
+.reveal {
+	opacity: 0;
+	transform: perspective(900px) translate3d(0, 60px, -80px) rotateX(18deg);
+	transition:
+		opacity 1s cubic-bezier(0.2, 0.8, 0.2, 1) var(--delay, 0ms),
+		transform 1.2s cubic-bezier(0.2, 0.8, 0.2, 1) var(--delay, 0ms);
+}
+.reveal.in {
+	opacity: 1;
+	transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.001ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.001ms !important;
+		scroll-behavior: auto !important;
+	}
+}
