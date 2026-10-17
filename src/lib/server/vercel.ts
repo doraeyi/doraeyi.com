@@ -1,4 +1,4 @@
-import { VERCEL_TEAM_ID, VERCEL_TOKEN } from '$app/env/private';
+import { VC_TEAM_ID, VC_TOKEN } from '$app/env/private';
 import type { ActivityDay, Project } from '#lib/types.js';
 
 const API = 'https://api.vercel.com';
@@ -24,14 +24,14 @@ interface VercelDeployment {
 	readyState?: string;
 }
 
-export const hasVercel = () => Boolean(VERCEL_TOKEN);
+export const hasVercel = () => Boolean(VC_TOKEN);
 
 async function call<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
 	const url = new URL(path, API);
 	for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
-	if (VERCEL_TEAM_ID) url.searchParams.set('teamId', VERCEL_TEAM_ID);
+	if (VC_TEAM_ID) url.searchParams.set('teamId', VC_TEAM_ID);
 
-	const res = await fetch(url, { headers: { Authorization: `Bearer ${VERCEL_TOKEN}` } });
+	const res = await fetch(url, { headers: { Authorization: `Bearer ${VC_TOKEN}` } });
 	if (!res.ok) throw new Error(`Vercel API ${res.status}: ${await res.text()}`);
 	return res.json() as Promise<T>;
 }

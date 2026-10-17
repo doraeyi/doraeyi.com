@@ -16,9 +16,11 @@ pnpm dev
 
 | 變數 | 用途 |
 | --- | --- |
-| `VERCEL_TOKEN` | 到 https://vercel.com/account/tokens 建一個。網站用它讀取你的專案清單與部署紀錄 |
-| `VERCEL_TEAM_ID` | 專案放在 Team 底下才需要 |
+| `VC_TOKEN` | 到 https://vercel.com/account/tokens 建一個。網站用它讀取你的專案清單與部署紀錄 |
+| `VC_TEAM_ID` | 專案放在 Team 底下才需要 |
 | `DATABASE_URL` | `mysql://user:pass@liam.name404.com:13306/doraeyi` |
+
+> 變數名稱不能用 `VERCEL_` 開頭，那是 Vercel 保留給系統變數的，所以這裡用 `VC_`。
 
 ## 資料從哪來
 
