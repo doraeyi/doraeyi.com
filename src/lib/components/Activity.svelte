@@ -189,7 +189,7 @@
 		width: 100%;
 		height: var(--h);
 		transform-origin: top;
-		transform: rotateX(-90deg);
+		transform: rotateX(90deg);
 		background: color-mix(in oklab, var(--c) 62%, #000);
 	}
 	/* 側面：沿著右緣立起來 */
@@ -199,23 +199,23 @@
 		height: 100%;
 		width: var(--h);
 		transform-origin: left;
-		transform: rotateY(90deg);
+		transform: rotateY(-90deg);
 		background: color-mix(in oklab, var(--c) 40%, #000);
 	}
 	.bar:hover i {
 		filter: brightness(1.6);
 	}
 	.l1 {
-		--c: #3a3a40;
+		--c: #3a3170;
 	}
 	.l2 {
-		--c: #66666e;
+		--c: #5f50c9;
 	}
 	.l3 {
-		--c: #a3a3ab;
+		--c: #8b7bff;
 	}
 	.l4 {
-		--c: #ededef;
+		--c: #4cc9f0;
 	}
 
 	.tip {

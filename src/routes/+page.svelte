@@ -16,6 +16,28 @@
 	let tag = $state<string | null>(null);
 	const shown = $derived(tag ? data.projects.filter((p) => p.tags.includes(tag!)) : data.projects);
 
+	const SECTIONS = [
+		['work', '作品'],
+		['about', '關於'],
+		['activity', '動態'],
+		['contact', '聯絡']
+	] as const;
+	let active = $state<string | null>(null);
+
+	$effect(() => {
+		const io = new IntersectionObserver(
+			(entries) => {
+				for (const e of entries) if (e.isIntersecting) active = e.target.id;
+			},
+			{ rootMargin: '-45% 0px -50% 0px' }
+		);
+		for (const [id] of SECTIONS) {
+			const el = document.getElementById(id);
+			if (el) io.observe(el);
+		}
+		return () => io.disconnect();
+	});
+
 	let progress = $state(0);
 	let scrolled = $state(false);
 
@@ -23,6 +45,7 @@
 		const max = document.documentElement.scrollHeight - innerHeight;
 		progress = max > 0 ? scrollY / max : 0;
 		scrolled = scrollY > 40;
+		if (scrollY < innerHeight * 0.5) active = null;
 	};
 </script>
 
@@ -37,17 +60,15 @@
 
 <div class="intro" aria-hidden="true"><span>{profile.handle}</span></div>
 <div class="progress" style:transform="scaleX({progress})"></div>
-<div class="grain" aria-hidden="true"></div>
 
 <Scene />
 
 <header class:scrolled>
 	<a class="logo" href="#top"><i></i>{profile.handle}</a>
 	<nav>
-		<a href="#work">作品</a>
-		<a href="#about">關於</a>
-		<a href="#activity">動態</a>
-		<a href="#contact">聯絡</a>
+		{#each SECTIONS as [id, label] (id)}
+			<a href="#{id}" class:active={active === id} aria-current={active === id ? 'true' : undefined}>{label}</a>
+		{/each}
 	</nav>
 	<span class="live-pill"><i></i>{liveCount} 個專案上線中</span>
 </header>
@@ -210,7 +231,7 @@
 		display: grid;
 		place-items: center;
 		background: var(--bg);
-		animation: curtain 1.1s cubic-bezier(0.8, 0, 0.2, 1) 0.9s forwards;
+		animation: curtain 0.7s cubic-bezier(0.8, 0, 0.2, 1) 0.45s forwards;
 		pointer-events: none;
 	}
 	.intro span {
@@ -239,15 +260,7 @@
 		height: 2px;
 		z-index: 60;
 		transform-origin: left;
-		background: var(--text);
-	}
-	.grain {
-		position: fixed;
-		inset: 0;
-		z-index: 2;
-		pointer-events: none;
-		opacity: 0.04;
-		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+		background: var(--accent-grad);
 	}
 
 	/* ---------- 導覽列 ---------- */
@@ -301,6 +314,11 @@
 	nav a:hover {
 		color: var(--text);
 		background: rgb(255 255 255 / 0.07);
+	}
+	nav a.active {
+		color: var(--text);
+		background: rgb(139 123 255 / 0.16);
+		box-shadow: inset 0 0 0 1px rgb(139 123 255 / 0.35);
 	}
 	.live-pill {
 		display: inline-flex;
@@ -362,8 +380,9 @@
 	}
 	h2 em {
 		font-style: normal;
+		background: var(--accent-grad);
+		background-clip: text;
 		color: transparent;
-		-webkit-text-stroke: 1.5px rgb(255 255 255 / 0.55);
 	}
 	.lede {
 		margin: 24px 0 0;
@@ -427,7 +446,7 @@
 		font: 500 14px var(--font-mono);
 		letter-spacing: 0.06em;
 		color: var(--text-soft);
-		animation: fadeUp 1s cubic-bezier(0.2, 0.8, 0.2, 1) 1.5s both;
+		animation: fadeUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) 0.6s both;
 	}
 	.kicker .line {
 		width: 48px;
@@ -448,8 +467,8 @@
 		background: linear-gradient(180deg, #fff 35%, #9a9aa2);
 		background-clip: text;
 		color: transparent;
-		animation: flipIn 1.3s cubic-bezier(0.2, 0.9, 0.25, 1.2) both;
-		animation-delay: calc(1.25s + var(--i) * 70ms);
+		animation: flipIn 1.1s cubic-bezier(0.2, 0.9, 0.25, 1.2) both;
+		animation-delay: calc(0.55s + var(--i) * 45ms);
 		transition: transform 0.5s cubic-bezier(0.2, 0.9, 0.25, 1.4);
 	}
 	.ch:hover {
@@ -474,14 +493,14 @@
 		font-size: clamp(18px, 2vw, 24px);
 		line-height: 1.55;
 		color: var(--text-soft);
-		animation: fadeUp 1s cubic-bezier(0.2, 0.8, 0.2, 1) 1.9s both;
+		animation: fadeUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) 0.9s both;
 	}
 	.cta {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 14px;
 		margin-top: 40px;
-		animation: fadeUp 1s cubic-bezier(0.2, 0.8, 0.2, 1) 2.05s both;
+		animation: fadeUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) 1s both;
 	}
 	.hero-foot {
 		position: absolute;
@@ -491,7 +510,7 @@
 		display: flex;
 		align-items: flex-end;
 		justify-content: space-between;
-		animation: fadeUp 1s 2.3s both;
+		animation: fadeUp 0.8s 1.15s both;
 	}
 	.scroll-hint {
 		width: 26px;
@@ -562,14 +581,12 @@
 		animation: marquee 38s linear infinite;
 		font: 700 clamp(26px, 3.6vw, 46px) var(--font-display);
 		letter-spacing: -0.02em;
-		color: transparent;
-		-webkit-text-stroke: 1px rgb(255 255 255 / 0.5);
+		color: var(--text-soft);
 	}
 	.track i {
 		font-style: normal;
 		font-size: 0.5em;
 		color: var(--accent);
-		-webkit-text-stroke: 0;
 	}
 	@keyframes marquee {
 		to {
@@ -690,8 +707,9 @@
 		display: grid;
 		place-items: center;
 		background:
-			radial-gradient(circle at 30% 20%, rgb(255 255 255 / 0.22), transparent 45%),
-			linear-gradient(160deg, #2a2a30, #0e0e11);
+			radial-gradient(circle at 30% 20%, rgb(255 255 255 / 0.25), transparent 45%),
+			radial-gradient(circle at 80% 90%, rgb(76 201 240 / 0.45), transparent 55%),
+			linear-gradient(160deg, #5a4bd6, #1a1540);
 		transform: translateZ(40px);
 	}
 	.avatar img {
@@ -738,6 +756,7 @@
 		margin: 28px 0 0;
 		font-size: clamp(18px, 1.8vw, 23px);
 		line-height: 1.75;
+		max-width: 36em;
 		color: var(--text-soft);
 	}
 	.skills {

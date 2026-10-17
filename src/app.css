@@ -3,10 +3,11 @@
 	--surface: #111114;
 	--line: rgb(255 255 255 / 0.08);
 	--text: #ededef;
-	--text-soft: #b4b4bb;
-	--muted: #77777f;
-	/* 唯一的強調色，只用在很小的地方 */
-	--accent: #a99cff;
+	--text-soft: #cfcfd8;
+	--muted: #92929c;
+	--accent: #8b7bff;
+	--accent-2: #4cc9f0;
+	--accent-grad: linear-gradient(100deg, var(--accent), var(--accent-2));
 	--font-display: 'Syne', 'Noto Sans TC', system-ui, sans-serif;
 	--font-body: 'Manrope', 'Noto Sans TC', system-ui, sans-serif;
 	--font-mono: 'JetBrains Mono', ui-monospace, monospace;
@@ -52,10 +53,10 @@ a {
 /* 捲到才出場 */
 .reveal {
 	opacity: 0;
-	transform: perspective(900px) translate3d(0, 60px, -80px) rotateX(18deg);
+	transform: perspective(900px) translate3d(0, 36px, -40px) rotateX(10deg);
 	transition:
-		opacity 1s cubic-bezier(0.2, 0.8, 0.2, 1) var(--delay, 0ms),
-		transform 1.2s cubic-bezier(0.2, 0.8, 0.2, 1) var(--delay, 0ms);
+		opacity 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) var(--delay, 0ms),
+		transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) var(--delay, 0ms);
 }
 .reveal.in {
 	opacity: 1;

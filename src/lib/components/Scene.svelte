@@ -94,8 +94,10 @@
 						// 石墨底色 + 白色輪廓光，只在背光面帶一點點冷紫
 						vec3 col = vec3(0.03, 0.03, 0.035);
 						col += vec3(0.20) * diff;
-						col += vec3(0.42, 0.38, 0.62) * back * 0.18;
-						col += vec3(0.92, 0.92, 0.96) * fres;
+						col += vec3(0.42, 0.38, 0.9) * back * 0.22;
+						// 輪廓光上紫下藍，跟頁面強調色一致
+						vec3 rim = mix(vec3(0.30, 0.79, 0.94), vec3(0.55, 0.48, 1.0), n.y * 0.5 + 0.5);
+						col += mix(vec3(0.95), rim, 0.65) * fres;
 						col += spec * 0.7;
 						col += smoothstep(0.15, 0.35, vDisp) * 0.04;
 						gl_FragColor = vec4(col, uFade);
@@ -111,8 +113,8 @@
 		// ---- 環繞的線框圓環 ----
 		const ringMat = (color: number, opacity: number) =>
 			new THREE.MeshBasicMaterial({ color, wireframe: true, transparent: true, opacity });
-		const ring1 = new THREE.Mesh(new THREE.TorusGeometry(2.25, 0.008, 6, 180), ringMat(0xffffff, 0.28));
-		const ring2 = new THREE.Mesh(new THREE.TorusGeometry(2.65, 0.006, 6, 200), ringMat(0xffffff, 0.12));
+		const ring1 = new THREE.Mesh(new THREE.TorusGeometry(2.25, 0.008, 6, 180), ringMat(0x8b7bff, 0.45));
+		const ring2 = new THREE.Mesh(new THREE.TorusGeometry(2.65, 0.006, 6, 200), ringMat(0x4cc9f0, 0.22));
 		const shell = new THREE.Mesh(new THREE.IcosahedronGeometry(3.2, 1), ringMat(0xffffff, 0.035));
 		for (const m of [ring1, ring2, shell]) m.userData.o = (m.material as THREE.MeshBasicMaterial).opacity;
 		ring1.rotation.set(1.2, 0.3, 0);
@@ -130,7 +132,7 @@
 		const COUNT = innerWidth < 700 ? 1400 : 3200;
 		const pos = new Float32Array(COUNT * 3);
 		const col = new Float32Array(COUNT * 3);
-		const tints = [new THREE.Color('#ffffff'), new THREE.Color('#bdbdc6'), new THREE.Color('#8d84c9')];
+		const tints = [new THREE.Color('#ffffff'), new THREE.Color('#ffffff'), new THREE.Color('#8b7bff'), new THREE.Color('#4cc9f0')];
 		for (let i = 0; i < COUNT; i++) {
 			const r = 4 + Math.pow(Math.random(), 0.6) * 22;
 			const th = Math.random() * Math.PI * 2;
@@ -220,7 +222,8 @@
 			blobGroup.position.x = L(L(mobile ? 0 : 1.9, sideX, he), 0, ee);
 			blobGroup.position.y = L(L(mobile ? 0.9 : 0.1, mobile ? 1.2 : 0.4, he), mobile ? -1.3 : -2.1, ee);
 			blobGroup.scale.setScalar((mobile ? 0.72 : 1) * L(L(1, 0.75, he), 0.7, ee));
-			const fade = L(L(1, 0.32, he), 0.55, ee);
+			// 內容區把球壓到很淡，文字才好讀
+			const fade = L(L(1, 0.16, he), 0.4, ee);
 			blobUniforms.uFade.value = fade;
 			for (const m of [ring1, ring2, shell]) (m.material as THREE.MeshBasicMaterial).opacity = (m.userData.o as number) * fade;
 			const s = smooth;

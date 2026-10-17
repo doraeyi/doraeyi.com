@@ -10,7 +10,7 @@
 	const live = $derived(project.state === 'READY');
 </script>
 
-<article class="wrap" class:featured={project.featured} style:--i={index}>
+<article class="wrap" class:featured={project.featured} style:--accent={project.accent} style:--i={index}>
 	<div class="card" {@attach tilt(12)}>
 		<div class="cover">
 			<div class="floor"></div>
@@ -42,7 +42,7 @@
 			<div class="links">
 				{#if project.url}
 					<a class="visit" href={project.url} target="_blank" rel="noreferrer">
-						{host}<span aria-hidden="true">↗</span>
+						<b>前往網站</b><small>{host}</small><span aria-hidden="true">↗</span>
 					</a>
 				{:else}
 					<span class="visit muted">尚未綁定網址</span>
@@ -91,8 +91,10 @@
 	}
 	.card:hover {
 		transition-duration: 0.12s, 0.5s, 0.4s;
-		border-color: rgb(255 255 255 / 0.22);
-		box-shadow: 0 50px 80px -30px rgb(0 0 0 / 0.95);
+		border-color: color-mix(in oklab, var(--accent) 50%, transparent);
+		box-shadow:
+			0 50px 80px -30px rgb(0 0 0 / 0.95),
+			0 0 50px -20px color-mix(in oklab, var(--accent) 50%, transparent);
 	}
 
 	.cover {
@@ -102,8 +104,9 @@
 		overflow: hidden;
 		transform-style: preserve-3d;
 		background:
-			radial-gradient(90% 80% at 75% 10%, rgb(255 255 255 / 0.09), transparent 60%),
-			#0c0c0e;
+			radial-gradient(110% 90% at 80% 0%, color-mix(in oklab, var(--accent) 45%, transparent), transparent 65%),
+			radial-gradient(70% 70% at 0% 100%, color-mix(in oklab, var(--accent) 18%, transparent), transparent 70%),
+			#0c0c10;
 	}
 	.featured .cover {
 		height: 260px;
@@ -112,8 +115,8 @@
 		position: absolute;
 		inset: 40% -50% -60%;
 		background-image:
-			linear-gradient(rgb(255 255 255 / 0.35) 1px, transparent 1px),
-			linear-gradient(90deg, rgb(255 255 255 / 0.35) 1px, transparent 1px);
+			linear-gradient(color-mix(in oklab, var(--accent) 55%, transparent) 1px, transparent 1px),
+			linear-gradient(90deg, color-mix(in oklab, var(--accent) 55%, transparent) 1px, transparent 1px);
 		background-size: 38px 38px;
 		transform: perspective(300px) rotateX(62deg);
 		mask-image: linear-gradient(to top, #000 10%, transparent 80%);
@@ -132,8 +135,10 @@
 		border-radius: 50%;
 		left: 62%;
 		top: 18%;
-		background: radial-gradient(circle at 32% 28%, #fff, #a3a3aa 30%, #2a2a2f 72%, #111 100%);
-		box-shadow: 0 30px 50px -20px rgb(0 0 0 / 0.9);
+		background: radial-gradient(circle at 32% 28%, #fff, color-mix(in oklab, var(--accent) 75%, #fff) 25%, color-mix(in oklab, var(--accent) 40%, #000) 75%);
+		box-shadow:
+			0 30px 50px -20px rgb(0 0 0 / 0.9),
+			0 0 50px -10px color-mix(in oklab, var(--accent) 55%, transparent);
 		animation: bob 7s ease-in-out infinite;
 		animation-delay: calc(var(--i) * -1.3s);
 	}
@@ -155,7 +160,7 @@
 		bottom: -26px;
 		font: 800 170px/1 var(--font-display);
 		color: transparent;
-		-webkit-text-stroke: 1.5px rgb(255 255 255 / 0.7);
+		-webkit-text-stroke: 1.5px color-mix(in oklab, var(--accent) 35%, #fff);
 		transform: translateZ(50px);
 		transition: transform 0.5s;
 	}
@@ -213,9 +218,12 @@
 		border-radius: 50%;
 		background: currentColor;
 	}
+	.status.live {
+		color: #6ee7b0;
+	}
 	.status.live i {
-		background: var(--accent);
-		box-shadow: 0 0 0 0 var(--accent);
+		background: #3ddc97;
+		box-shadow: 0 0 0 0 #3ddc97;
 		animation: ping 2s infinite;
 	}
 	@keyframes ping {
@@ -265,13 +273,29 @@
 	.visit {
 		display: inline-flex;
 		align-items: center;
-		gap: 8px;
-		font: 500 13px var(--font-mono);
+		gap: 10px;
+		min-width: 0;
+		padding: 9px 14px 9px 16px;
+		border-radius: 99px;
+		background: color-mix(in oklab, var(--accent) 16%, transparent);
+		border: 1px solid color-mix(in oklab, var(--accent) 40%, transparent);
 		color: var(--text);
 		text-decoration: none;
+		white-space: nowrap;
+		transition: background 0.3s;
+	}
+	.visit:hover {
+		background: color-mix(in oklab, var(--accent) 30%, transparent);
+	}
+	.visit b {
+		font-size: 14px;
+		font-weight: 600;
+	}
+	.visit small {
+		font: 500 12px var(--font-mono);
+		color: var(--muted);
 		overflow: hidden;
 		text-overflow: ellipsis;
-		white-space: nowrap;
 	}
 	.visit span {
 		transition: transform 0.3s;
@@ -281,6 +305,9 @@
 	}
 	.visit.muted {
 		color: var(--muted);
+		background: none;
+		border-color: var(--line);
+		font-size: 13px;
 	}
 	.repo {
 		display: grid;
