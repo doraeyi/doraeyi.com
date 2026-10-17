@@ -83,20 +83,21 @@
 				fragmentShader: /* glsl */ `
 					uniform float uTime; uniform float uFade;
 					varying vec3 vNormal; varying vec3 vView; varying float vDisp;
-					vec3 palette(float t){
-						vec3 a=vec3(0.5,0.45,0.6); vec3 b=vec3(0.5,0.45,0.4);
-						vec3 c=vec3(1.0,1.0,1.0); vec3 d=vec3(0.62,0.33,0.10);
-						return a + b * cos(6.28318 * (c * t + d));
-					}
 					void main(){
 						vec3 n = normalize(vNormal);
-						float fres = pow(1.0 - max(dot(n, vView), 0.0), 2.4);
-						vec3 irid = palette(fres * 0.9 + vDisp * 0.8 + n.y * 0.25 + uTime * 0.03);
-						vec3 light = normalize(vec3(0.6, 0.8, 0.9));
-						float diff = max(dot(n, light), 0.0);
-						float spec = pow(max(dot(reflect(-light, n), vView), 0.0), 40.0);
-						vec3 base = mix(vec3(0.04, 0.03, 0.10), irid, 0.35 + diff * 0.45);
-						vec3 col = base + irid * fres * 1.3 + spec * 0.9;
+						float fres = pow(1.0 - max(dot(n, vView), 0.0), 2.2);
+						vec3 key = normalize(vec3(0.6, 0.8, 0.9));
+						vec3 fill = normalize(vec3(-0.8, -0.4, 0.5));
+						float diff = max(dot(n, key), 0.0);
+						float back = max(dot(n, fill), 0.0);
+						float spec = pow(max(dot(reflect(-key, n), vView), 0.0), 60.0);
+						// 石墨底色 + 白色輪廓光，只在背光面帶一點點冷紫
+						vec3 col = vec3(0.03, 0.03, 0.035);
+						col += vec3(0.20) * diff;
+						col += vec3(0.42, 0.38, 0.62) * back * 0.18;
+						col += vec3(0.92, 0.92, 0.96) * fres;
+						col += spec * 0.7;
+						col += smoothstep(0.15, 0.35, vDisp) * 0.04;
 						gl_FragColor = vec4(col, uFade);
 					}
 				`,
@@ -110,9 +111,9 @@
 		// ---- 環繞的線框圓環 ----
 		const ringMat = (color: number, opacity: number) =>
 			new THREE.MeshBasicMaterial({ color, wireframe: true, transparent: true, opacity });
-		const ring1 = new THREE.Mesh(new THREE.TorusGeometry(2.25, 0.008, 6, 180), ringMat(0x7c5cff, 0.7));
-		const ring2 = new THREE.Mesh(new THREE.TorusGeometry(2.65, 0.006, 6, 200), ringMat(0x00d1ff, 0.45));
-		const shell = new THREE.Mesh(new THREE.IcosahedronGeometry(3.2, 1), ringMat(0xffffff, 0.05));
+		const ring1 = new THREE.Mesh(new THREE.TorusGeometry(2.25, 0.008, 6, 180), ringMat(0xffffff, 0.28));
+		const ring2 = new THREE.Mesh(new THREE.TorusGeometry(2.65, 0.006, 6, 200), ringMat(0xffffff, 0.12));
+		const shell = new THREE.Mesh(new THREE.IcosahedronGeometry(3.2, 1), ringMat(0xffffff, 0.035));
 		for (const m of [ring1, ring2, shell]) m.userData.o = (m.material as THREE.MeshBasicMaterial).opacity;
 		ring1.rotation.set(1.2, 0.3, 0);
 		ring2.rotation.set(1.8, -0.5, 0.4);
@@ -121,7 +122,7 @@
 		// 環上的小衛星
 		const moon = new THREE.Mesh(
 			new THREE.SphereGeometry(0.07, 24, 24),
-			new THREE.MeshBasicMaterial({ color: 0xff4fa3 })
+			new THREE.MeshBasicMaterial({ color: 0xffffff })
 		);
 		ring1.add(moon);
 
@@ -129,7 +130,7 @@
 		const COUNT = innerWidth < 700 ? 1400 : 3200;
 		const pos = new Float32Array(COUNT * 3);
 		const col = new Float32Array(COUNT * 3);
-		const tints = [new THREE.Color('#7c5cff'), new THREE.Color('#00d1ff'), new THREE.Color('#ff4fa3'), new THREE.Color('#ffffff')];
+		const tints = [new THREE.Color('#ffffff'), new THREE.Color('#bdbdc6'), new THREE.Color('#8d84c9')];
 		for (let i = 0; i < COUNT; i++) {
 			const r = 4 + Math.pow(Math.random(), 0.6) * 22;
 			const th = Math.random() * Math.PI * 2;
@@ -153,7 +154,8 @@
 		const stars = new THREE.Points(
 			starGeo,
 			new THREE.PointsMaterial({
-				size: 0.09,
+				size: 0.06,
+				opacity: 0.8,
 				map: new THREE.CanvasTexture(dot),
 				vertexColors: true,
 				transparent: true,

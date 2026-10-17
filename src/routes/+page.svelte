@@ -17,7 +17,6 @@
 	const shown = $derived(tag ? data.projects.filter((p) => p.tags.includes(tag!)) : data.projects);
 
 	let progress = $state(0);
-	let glow = $state({ x: -500, y: -500 });
 	let scrolled = $state(false);
 
 	const onScroll = () => {
@@ -34,11 +33,10 @@
 	<meta property="og:description" content={profile.tagline} />
 </svelte:head>
 
-<svelte:window onscroll={onScroll} onpointermove={(e) => (glow = { x: e.clientX, y: e.clientY })} />
+<svelte:window onscroll={onScroll} />
 
 <div class="intro" aria-hidden="true"><span>{profile.handle}</span></div>
 <div class="progress" style:transform="scaleX({progress})"></div>
-<div class="glow" style:translate="{glow.x}px {glow.y}px"></div>
 <div class="grain" aria-hidden="true"></div>
 
 <Scene />
@@ -128,8 +126,7 @@
 	<section id="about" class="section about">
 		<div class="id-card-wrap" {@attach reveal()}>
 			<div class="id-card" {@attach tilt(18)}>
-				<div class="holo"></div>
-				<div class="avatar">
+								<div class="avatar">
 					{#if profile.avatarUrl}
 						<img src={profile.avatarUrl} alt={profile.name} />
 					{:else}
@@ -146,8 +143,7 @@
 				<div class="id-row">
 					<span>BASE</span><span>{profile.location}</span>
 				</div>
-				<div class="chip"></div>
-				<div class="id-glare"></div>
+								<div class="id-glare"></div>
 			</div>
 		</div>
 
@@ -220,13 +216,8 @@
 	.intro span {
 		font: 800 clamp(28px, 6vw, 64px) var(--font-display);
 		letter-spacing: -0.03em;
-		background: linear-gradient(90deg, var(--violet), var(--cyan), var(--pink), var(--violet));
-		background-size: 300% 100%;
-		background-clip: text;
-		color: transparent;
-		animation:
-			shimmer 1.4s linear infinite,
-			introText 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+		color: var(--text);
+		animation: introText 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 	}
 	@keyframes introText {
 		from {
@@ -240,11 +231,6 @@
 			visibility: hidden;
 		}
 	}
-	@keyframes shimmer {
-		to {
-			background-position: 300% 0;
-		}
-	}
 	.progress {
 		position: fixed;
 		top: 0;
@@ -253,31 +239,14 @@
 		height: 2px;
 		z-index: 60;
 		transform-origin: left;
-		background: linear-gradient(90deg, var(--violet), var(--cyan), var(--pink));
-	}
-	.glow {
-		position: fixed;
-		left: -300px;
-		top: -300px;
-		width: 600px;
-		height: 600px;
-		border-radius: 50%;
-		z-index: 1;
-		pointer-events: none;
-		background: radial-gradient(circle, rgb(124 92 255 / 0.13), transparent 60%);
-		transition: translate 0.25s ease-out;
-	}
-	@media (hover: none) {
-		.glow {
-			display: none;
-		}
+		background: var(--text);
 	}
 	.grain {
 		position: fixed;
 		inset: 0;
 		z-index: 2;
 		pointer-events: none;
-		opacity: 0.07;
+		opacity: 0.04;
 		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 	}
 
@@ -299,7 +268,7 @@
 		transition: 0.4s;
 	}
 	header.scrolled {
-		background: rgb(10 9 18 / 0.6);
+		background: rgb(10 10 12 / 0.6);
 		backdrop-filter: blur(18px) saturate(1.4);
 		border-color: var(--line);
 	}
@@ -314,8 +283,8 @@
 		width: 18px;
 		height: 18px;
 		border-radius: 50%;
-		background: radial-gradient(circle at 30% 30%, #fff, var(--violet) 45%, #1a0f55);
-		box-shadow: 0 0 14px var(--violet);
+		background: radial-gradient(circle at 32% 30%, #fff, #8a8a92 45%, #1c1c20);
+		box-shadow: 0 0 12px rgb(255 255 255 / 0.25);
 	}
 	nav {
 		display: flex;
@@ -340,21 +309,21 @@
 		padding: 8px 14px;
 		border-radius: 99px;
 		font: 500 12px var(--font-mono);
-		background: rgb(61 220 151 / 0.1);
-		color: #7ef0bd;
-		border: 1px solid rgb(61 220 151 / 0.25);
+		background: rgb(255 255 255 / 0.04);
+		color: var(--text-soft);
+		border: 1px solid var(--line);
 		white-space: nowrap;
 	}
 	.live-pill i {
 		width: 7px;
 		height: 7px;
 		border-radius: 50%;
-		background: #3ddc97;
+		background: var(--accent);
 		animation: pulse 2s infinite;
 	}
 	@keyframes pulse {
 		0% {
-			box-shadow: 0 0 0 0 rgb(61 220 151 / 0.7);
+			box-shadow: 0 0 0 0 rgb(169 156 255 / 0.7);
 		}
 		70% {
 			box-shadow: 0 0 0 8px transparent;
@@ -384,21 +353,17 @@
 		margin: 0 0 18px;
 		font: 500 13px var(--font-mono);
 		letter-spacing: 0.12em;
-		color: var(--cyan);
+		color: var(--muted);
 	}
 	h2 {
 		margin: 0;
 		font: 800 clamp(44px, 7.5vw, 104px) / 0.98 var(--font-display);
 		letter-spacing: -0.035em;
 	}
-	h2 :global(em),
 	h2 em {
 		font-style: normal;
-		background: linear-gradient(100deg, var(--violet) 10%, var(--cyan) 50%, var(--pink) 90%);
-		background-size: 200% 100%;
-		background-clip: text;
 		color: transparent;
-		animation: shimmer 6s linear infinite;
+		-webkit-text-stroke: 1.5px rgb(255 255 255 / 0.55);
 	}
 	.lede {
 		margin: 24px 0 0;
@@ -423,12 +388,12 @@
 		will-change: transform;
 	}
 	.btn.primary {
-		color: #0a0814;
-		background: linear-gradient(120deg, #fff, #d9d0ff);
-		box-shadow: 0 10px 40px -10px rgb(124 92 255 / 0.9);
+		color: var(--bg);
+		background: var(--text);
 	}
 	.btn.primary:hover {
-		box-shadow: 0 16px 60px -8px rgb(124 92 255 / 1);
+		background: #fff;
+		box-shadow: 0 12px 40px -12px rgb(255 255 255 / 0.5);
 	}
 	.btn.ghost {
 		border: 1px solid rgb(255 255 255 / 0.2);
@@ -467,7 +432,7 @@
 	.kicker .line {
 		width: 48px;
 		height: 1px;
-		background: linear-gradient(90deg, transparent, var(--cyan));
+		background: linear-gradient(90deg, transparent, var(--muted));
 	}
 	h1 {
 		margin: 0;
@@ -480,10 +445,9 @@
 	.ch {
 		display: inline-block;
 		transform-origin: 50% 100%;
-		background: linear-gradient(180deg, #fff 30%, #a99bff 75%, #5b45d6);
+		background: linear-gradient(180deg, #fff 35%, #9a9aa2);
 		background-clip: text;
 		color: transparent;
-		text-shadow: 0 30px 80px rgb(124 92 255 / 0.35);
 		animation: flipIn 1.3s cubic-bezier(0.2, 0.9, 0.25, 1.2) both;
 		animation-delay: calc(1.25s + var(--i) * 70ms);
 		transition: transform 0.5s cubic-bezier(0.2, 0.9, 0.25, 1.4);
@@ -586,10 +550,7 @@
 		display: flex;
 		width: max-content;
 		transform: rotateX(18deg) rotateZ(-3deg);
-		background: linear-gradient(90deg, var(--violet), #4f3bd6 40%, #1fb6e0);
-		box-shadow:
-			0 30px 60px -20px rgb(124 92 255 / 0.6),
-			inset 0 1px rgb(255 255 255 / 0.3);
+		border-block: 1px solid var(--line);
 		margin: 0 -40px;
 	}
 	.track {
@@ -599,13 +560,16 @@
 		padding: 18px 14px;
 		white-space: nowrap;
 		animation: marquee 38s linear infinite;
-		font: 700 clamp(22px, 3vw, 38px) var(--font-display);
+		font: 700 clamp(26px, 3.6vw, 46px) var(--font-display);
 		letter-spacing: -0.02em;
+		color: transparent;
+		-webkit-text-stroke: 1px rgb(255 255 255 / 0.5);
 	}
 	.track i {
 		font-style: normal;
-		font-size: 0.6em;
-		opacity: 0.7;
+		font-size: 0.5em;
+		color: var(--accent);
+		-webkit-text-stroke: 0;
 	}
 	@keyframes marquee {
 		to {
@@ -684,6 +648,9 @@
 	}
 	.id-card-wrap {
 		perspective: 1000px;
+		width: 100%;
+		max-width: 360px;
+		margin-inline: auto;
 	}
 	.id-card {
 		--rx: 0deg;
@@ -698,14 +665,12 @@
 		flex-direction: column;
 		gap: 14px;
 		overflow: hidden;
-		background: linear-gradient(150deg, #1b1536, #0d0c18 60%);
-		border: 1px solid rgb(255 255 255 / 0.14);
+		background: linear-gradient(150deg, #1a1a1e, #0d0d10 60%);
+		border: 1px solid rgb(255 255 255 / 0.12);
 		transform: rotateX(var(--rx)) rotateY(var(--ry));
 		transform-style: preserve-3d;
 		transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
-		box-shadow:
-			0 60px 100px -40px rgb(0 0 0 / 0.9),
-			0 0 80px -30px rgb(124 92 255 / 0.6);
+		box-shadow: 0 60px 100px -40px rgb(0 0 0 / 0.9);
 		animation: float 8s ease-in-out infinite;
 	}
 	.id-card:hover {
@@ -717,23 +682,6 @@
 			translate: 0 -14px;
 		}
 	}
-	.holo {
-		position: absolute;
-		inset: 0;
-		opacity: 0.35;
-		mix-blend-mode: color-dodge;
-		background: linear-gradient(
-			115deg,
-			transparent 20%,
-			#ff4fa3 35%,
-			#ffd84f 45%,
-			#4fffd2 55%,
-			#7c5cff 65%,
-			transparent 80%
-		);
-		background-size: 250% 250%;
-		background-position: var(--mx) var(--my);
-	}
 	.avatar {
 		width: 100%;
 		flex: 1;
@@ -742,9 +690,8 @@
 		display: grid;
 		place-items: center;
 		background:
-			radial-gradient(circle at 30% 25%, rgb(255 255 255 / 0.5), transparent 30%),
-			radial-gradient(circle at 70% 80%, var(--cyan), transparent 55%),
-			linear-gradient(140deg, var(--violet), #2b1a80);
+			radial-gradient(circle at 30% 20%, rgb(255 255 255 / 0.22), transparent 45%),
+			linear-gradient(160deg, #2a2a30, #0e0e11);
 		transform: translateZ(40px);
 	}
 	.avatar img {
@@ -754,8 +701,8 @@
 	}
 	.avatar span {
 		font: 800 140px var(--font-display);
-		color: rgb(255 255 255 / 0.92);
-		text-shadow: 0 20px 50px rgb(0 0 0 / 0.4);
+		color: transparent;
+		-webkit-text-stroke: 1.5px rgb(255 255 255 / 0.8);
 	}
 	.id-meta {
 		display: grid;
@@ -780,17 +727,6 @@
 	.id-row span:last-child {
 		color: var(--text-soft);
 		text-align: right;
-	}
-	.chip {
-		position: absolute;
-		top: 28px;
-		right: 28px;
-		width: 44px;
-		height: 34px;
-		border-radius: 8px;
-		background: linear-gradient(135deg, #f6d67a, #b8862f);
-		transform: translateZ(50px);
-		box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.25);
 	}
 	.id-glare {
 		position: absolute;
@@ -826,8 +762,7 @@
 	}
 	.skills li:hover {
 		transform: translateY(-6px) rotate(-3deg) scale(1.06);
-		border-color: var(--violet);
-		box-shadow: 0 14px 30px -12px var(--violet);
+		border-color: rgb(255 255 255 / 0.4);
 	}
 
 	/* ---------- 聯絡 ---------- */
@@ -843,21 +778,18 @@
 	}
 	.extrude {
 		font-size: clamp(64px, 13vw, 190px);
-		color: #f4f1ff;
+		color: var(--text);
 		transform: perspective(900px) rotateX(16deg);
 		text-shadow:
-			0 1px 0 #c9bfff,
-			0 2px 0 #b3a5ff,
-			0 3px 0 #9d89ff,
-			0 4px 0 #886ffb,
-			0 5px 0 #7457ef,
-			0 6px 0 #6243df,
-			0 7px 0 #5133c8,
-			0 8px 0 #4227ad,
-			0 9px 0 #351d90,
-			0 10px 0 #291472,
-			0 22px 30px rgb(0 0 0 / 0.6),
-			0 40px 90px rgb(124 92 255 / 0.5);
+			0 1px 0 #cfcfd4,
+			0 2px 0 #b5b5bb,
+			0 3px 0 #9b9ba2,
+			0 4px 0 #818188,
+			0 5px 0 #68686f,
+			0 6px 0 #505056,
+			0 7px 0 #3b3b40,
+			0 8px 0 #29292d,
+			0 20px 30px rgb(0 0 0 / 0.7);
 	}
 	.contact-links {
 		display: flex;

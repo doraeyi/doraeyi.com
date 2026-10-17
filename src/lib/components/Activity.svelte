@@ -139,9 +139,7 @@
 	}
 	.stats b {
 		font: 700 clamp(28px, 3.4vw, 40px) / 1 var(--font-display);
-		background: linear-gradient(120deg, #fff, #b6a6ff);
-		background-clip: text;
-		color: transparent;
+		color: var(--text);
 	}
 	.stats span {
 		color: var(--muted);
@@ -166,7 +164,7 @@
 		width: var(--cell);
 		height: var(--cell);
 		transform-style: preserve-3d;
-		--c: #1d1b2e;
+		--c: #19191c;
 		--h: 0px;
 		cursor: default;
 	}
@@ -208,19 +206,16 @@
 		filter: brightness(1.6);
 	}
 	.l1 {
-		--c: #3b2f8f;
+		--c: #3a3a40;
 	}
 	.l2 {
-		--c: #5b45d6;
+		--c: #66666e;
 	}
 	.l3 {
-		--c: #8a6bff;
+		--c: #a3a3ab;
 	}
 	.l4 {
-		--c: #26d9ff;
-	}
-	.l4 .top {
-		box-shadow: 0 0 18px #26d9ff;
+		--c: #ededef;
 	}
 
 	.tip {
@@ -229,7 +224,7 @@
 		right: 8px;
 		padding: 10px 14px;
 		border-radius: 14px;
-		background: rgb(14 13 24 / 0.85);
+		background: rgb(14 14 16 / 0.85);
 		border: 1px solid var(--line);
 		backdrop-filter: blur(10px);
 		display: grid;
@@ -259,6 +254,6 @@
 		width: 12px;
 		height: 12px;
 		border-radius: 3px;
-		background: var(--c, #1d1b2e);
+		background: var(--c, #19191c);
 	}
 </style>

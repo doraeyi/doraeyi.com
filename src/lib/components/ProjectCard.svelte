@@ -10,7 +10,7 @@
 	const live = $derived(project.state === 'READY');
 </script>
 
-<article class="wrap" class:featured={project.featured} style:--accent={project.accent} style:--i={index}>
+<article class="wrap" class:featured={project.featured} style:--i={index}>
 	<div class="card" {@attach tilt(12)}>
 		<div class="cover">
 			<div class="floor"></div>
@@ -77,8 +77,8 @@
 		display: flex;
 		flex-direction: column;
 		border-radius: 26px;
-		background: linear-gradient(160deg, color-mix(in oklab, var(--accent) 14%, var(--surface)) 0%, var(--surface) 55%);
-		border: 1px solid color-mix(in oklab, var(--accent) 28%, var(--line));
+		background: var(--surface);
+		border: 1px solid var(--line);
 		transform: rotateX(var(--rx)) rotateY(var(--ry));
 		transform-style: preserve-3d;
 		transition:
@@ -91,10 +91,8 @@
 	}
 	.card:hover {
 		transition-duration: 0.12s, 0.5s, 0.4s;
-		border-color: color-mix(in oklab, var(--accent) 60%, transparent);
-		box-shadow:
-			0 50px 80px -30px rgb(0 0 0 / 0.9),
-			0 0 60px -10px color-mix(in oklab, var(--accent) 45%, transparent);
+		border-color: rgb(255 255 255 / 0.22);
+		box-shadow: 0 50px 80px -30px rgb(0 0 0 / 0.95);
 	}
 
 	.cover {
@@ -104,9 +102,8 @@
 		overflow: hidden;
 		transform-style: preserve-3d;
 		background:
-			radial-gradient(120% 90% at 20% 0%, color-mix(in oklab, var(--accent) 55%, transparent), transparent 60%),
-			radial-gradient(80% 80% at 100% 100%, color-mix(in oklab, var(--accent) 35%, #000), transparent 70%),
-			#0b0a14;
+			radial-gradient(90% 80% at 75% 10%, rgb(255 255 255 / 0.09), transparent 60%),
+			#0c0c0e;
 	}
 	.featured .cover {
 		height: 260px;
@@ -115,8 +112,8 @@
 		position: absolute;
 		inset: 40% -50% -60%;
 		background-image:
-			linear-gradient(color-mix(in oklab, var(--accent) 60%, transparent) 1px, transparent 1px),
-			linear-gradient(90deg, color-mix(in oklab, var(--accent) 60%, transparent) 1px, transparent 1px);
+			linear-gradient(rgb(255 255 255 / 0.35) 1px, transparent 1px),
+			linear-gradient(90deg, rgb(255 255 255 / 0.35) 1px, transparent 1px);
 		background-size: 38px 38px;
 		transform: perspective(300px) rotateX(62deg);
 		mask-image: linear-gradient(to top, #000 10%, transparent 80%);
@@ -135,8 +132,8 @@
 		border-radius: 50%;
 		left: 62%;
 		top: 18%;
-		background: radial-gradient(circle at 30% 30%, #fff, var(--accent) 35%, color-mix(in oklab, var(--accent) 30%, #000) 75%);
-		box-shadow: 0 0 60px color-mix(in oklab, var(--accent) 70%, transparent);
+		background: radial-gradient(circle at 32% 28%, #fff, #a3a3aa 30%, #2a2a2f 72%, #111 100%);
+		box-shadow: 0 30px 50px -20px rgb(0 0 0 / 0.9);
 		animation: bob 7s ease-in-out infinite;
 		animation-delay: calc(var(--i) * -1.3s);
 	}
@@ -158,10 +155,9 @@
 		bottom: -26px;
 		font: 800 170px/1 var(--font-display);
 		color: transparent;
-		-webkit-text-stroke: 1.5px color-mix(in oklab, #fff 70%, var(--accent));
+		-webkit-text-stroke: 1.5px rgb(255 255 255 / 0.7);
 		transform: translateZ(50px);
 		transition: transform 0.5s;
-		text-shadow: 0 0 40px color-mix(in oklab, var(--accent) 50%, transparent);
 	}
 	.card:hover .glyph {
 		transform: translateZ(80px) translateY(-8px);
@@ -209,7 +205,7 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 7px;
-		color: #ff8a7a;
+		color: var(--muted);
 	}
 	.status i {
 		width: 7px;
@@ -217,11 +213,9 @@
 		border-radius: 50%;
 		background: currentColor;
 	}
-	.status.live {
-		color: #3ddc97;
-	}
 	.status.live i {
-		box-shadow: 0 0 0 0 #3ddc97;
+		background: var(--accent);
+		box-shadow: 0 0 0 0 var(--accent);
 		animation: ping 2s infinite;
 	}
 	@keyframes ping {
@@ -252,9 +246,8 @@
 		padding: 4px 10px;
 		border-radius: 99px;
 		font-size: 12px;
-		color: color-mix(in oklab, var(--accent) 50%, #fff);
-		background: color-mix(in oklab, var(--accent) 14%, transparent);
-		border: 1px solid color-mix(in oklab, var(--accent) 30%, transparent);
+		color: var(--text-soft);
+		border: 1px solid var(--line);
 	}
 	.links {
 		margin-top: auto;
@@ -311,7 +304,7 @@
 		inset: 0;
 		border-radius: inherit;
 		pointer-events: none;
-		background: radial-gradient(500px circle at var(--mx) var(--my), rgb(255 255 255 / 0.13), transparent 40%);
+		background: radial-gradient(500px circle at var(--mx) var(--my), rgb(255 255 255 / 0.08), transparent 40%);
 		opacity: 0;
 		transition: opacity 0.4s;
 		z-index: 4;

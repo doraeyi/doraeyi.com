@@ -1,13 +1,12 @@
 :root {
-	--bg: #06060b;
-	--surface: #0f0e18;
-	--line: rgb(255 255 255 / 0.09);
-	--text: #f1eeff;
-	--text-soft: #c4c0dc;
-	--muted: #8a86a6;
-	--violet: #7c5cff;
-	--cyan: #00d1ff;
-	--pink: #ff4fa3;
+	--bg: #08080a;
+	--surface: #111114;
+	--line: rgb(255 255 255 / 0.08);
+	--text: #ededef;
+	--text-soft: #b4b4bb;
+	--muted: #77777f;
+	/* 唯一的強調色，只用在很小的地方 */
+	--accent: #a99cff;
 	--font-display: 'Syne', 'Noto Sans TC', system-ui, sans-serif;
 	--font-body: 'Manrope', 'Noto Sans TC', system-ui, sans-serif;
 	--font-mono: 'JetBrains Mono', ui-monospace, monospace;
@@ -36,8 +35,8 @@ body {
 }
 
 ::selection {
-	background: var(--violet);
-	color: #fff;
+	background: var(--text);
+	color: var(--bg);
 }
 
 a {
@@ -45,7 +44,7 @@ a {
 }
 
 :focus-visible {
-	outline: 2px solid var(--cyan);
+	outline: 2px solid var(--accent);
 	outline-offset: 3px;
 	border-radius: 6px;
 }
