@@ -270,6 +270,12 @@
 		position: relative;
 		z-index: 3;
 	}
+	.links .visit {
+		flex: 0 1 auto;
+	}
+	.repo {
+		flex: none;
+	}
 	.visit {
 		display: inline-flex;
 		align-items: center;
