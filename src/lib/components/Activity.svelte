@@ -3,9 +3,9 @@
 
 	let { days }: { days: ActivityDay[] } = $props();
 
-	const CELL = 13;
-	const GAP = 4;
 	const WEEKS = 53;
+	// 跟 app.css 的色階一致：底色 → --accent → --accent-2
+	const LEVELS = ['#1c1c24', '#3a3170', '#5f50c9', '#8b7bff', '#4cc9f0'];
 
 	const counts = $derived(new Map(days.map((d) => [d.date, d.count])));
 
@@ -41,26 +41,174 @@
 	});
 
 	const level = (n: number) => (n === 0 ? 0 : Math.min(4, Math.ceil((n / max) * 4)));
-	const height = (n: number) => (n === 0 ? 2 : 8 + Math.sqrt(n / max) * 72);
 
-	let hover = $state<(typeof grid)[number] | null>(null);
-	let wrap: HTMLDivElement;
+	type Cell = (typeof grid)[number];
+
+	let stage: HTMLDivElement;
+	let canvas: HTMLCanvasElement;
 	let stageW = $state(1000);
-	let shown = $state(false);
+	let hover = $state<{ cell: Cell; x: number; y: number } | null>(null);
 
 	// 窄螢幕只畫最近幾週，柱子才不會小到看不見
 	const weeks = $derived(stageW < 640 ? 18 : stageW < 900 ? 32 : WEEKS);
-	const visible = $derived(grid.filter((c) => c.w >= WEEKS - weeks).map((c) => ({ ...c, w: c.w - (WEEKS - weeks) })));
-	// rotateZ(-38deg) 之後的實際寬度，大約是 cos38·寬 + sin38·高
-	const scale = $derived(Math.min(1, stageW / (weeks * (CELL + GAP) * 0.79 + 7 * (CELL + GAP) * 0.62 + 60)));
+	const visible = $derived(
+		grid
+			.filter((c) => c.w >= WEEKS - weeks)
+			.map((c) => ({ ...c, w: c.w - (WEEKS - weeks) }))
+			// 由後往前畫：畫面上越下面的越靠近觀眾
+			.sort((a, b) => a.d - a.w - (b.d - b.w))
+	);
+
+	// 壓扁的等角投影（視角比標準等角低一點），週往右上、星期往右下；整張圖才不會比螢幕還高
+	const geo = $derived.by(() => {
+		const u = Math.min(22, (stageW * 0.94) / ((weeks + 7) * 0.866));
+		const cx = u * 0.866;
+		const cy = u * 0.3;
+		const maxH = u * 4.5;
+		const pad = 12;
+		const height = Math.ceil((weeks + 7) * cy + maxH + pad * 2);
+		const ox = (stageW - (weeks + 7) * cx) / 2;
+		const oy = weeks * cy + maxH + pad;
+		return { u, cx, cy, maxH, height, ox, oy };
+	});
+
+	const project = (gx: number, gy: number) => [geo.ox + (gx + gy) * geo.cx, geo.oy + (gy - gx) * geo.cy] as const;
+	const barHeight = (n: number) => (n === 0 ? geo.u * 0.12 : geo.u * 0.5 + Math.sqrt(n / max) * geo.maxH);
+
+	const shade = (hex: string, k: number) => {
+		const v = parseInt(hex.slice(1), 16);
+		const ch = (s: number) => Math.round(((v >> s) & 255) * k);
+		return `rgb(${ch(16)} ${ch(8)} ${ch(0)})`;
+	};
+
+	/** 一根柱子的六角形外框（頂面四點 + 底部可見的兩點），畫圖跟滑鼠判斷共用 */
+	function outline(c: Cell, h: number) {
+		const inset = 0.14;
+		const [lx, ly] = project(c.w + inset, c.d + inset); // 左
+		const [tx, ty] = project(c.w + 1 - inset, c.d + inset); // 上
+		const [rx, ry] = project(c.w + 1 - inset, c.d + 1 - inset); // 右
+		const [bx, by] = project(c.w + inset, c.d + 1 - inset); // 下
+		return { l: [lx, ly], t: [tx, ty], r: [rx, ry], b: [bx, by], h };
+	}
+
+	let progress = 0;
+	let started = false;
+
+	function draw() {
+		if (!canvas) return;
+		const dpr = Math.min(devicePixelRatio, 2);
+		const w = stageW;
+		const h = geo.height;
+		if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+			canvas.width = Math.round(w * dpr);
+			canvas.height = Math.round(h * dpr);
+		}
+		const ctx = canvas.getContext('2d')!;
+		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+		ctx.clearRect(0, 0, w, h);
+
+		const span = weeks + 7;
+		for (const c of visible) {
+			// 從左下往右上依序長出來
+			const delay = ((c.w + (7 - c.d)) / span) * 0.45;
+			const t = Math.min(1, Math.max(0, (progress - delay) / 0.55));
+			const e = 1 - Math.pow(1 - t, 3);
+			const { l, t: tp, r, b, h: bh } = outline(c, barHeight(c.count) * e);
+			const base = LEVELS[level(c.count)];
+			const lit = hover?.cell.date === c.date ? 1.45 : 1;
+
+			const quad = (pts: number[][], color: string) => {
+				ctx.beginPath();
+				ctx.moveTo(pts[0][0], pts[0][1]);
+				for (const p of pts.slice(1)) ctx.lineTo(p[0], p[1]);
+				ctx.closePath();
+				ctx.fillStyle = color;
+				ctx.fill();
+			};
+			const up = (p: number[]) => [p[0], p[1] - bh];
+
+			if (bh > 0.5) {
+				quad([l, b, up(b), up(l)], shade(base, 0.62 * lit)); // 左側面
+				quad([b, r, up(r), up(b)], shade(base, 0.42 * lit)); // 右側面
+			}
+			quad([up(l), up(tp), up(r), up(b)], shade(base, lit)); // 頂面
+		}
+	}
+
+	// 只在長高動畫期間連續重畫，之後只有 hover 或尺寸改變才重畫
+	function animate() {
+		const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+		const t0 = performance.now();
+		const step = (now: number) => {
+			progress = reduced ? 1 : Math.min(1, (now - t0) / 1400);
+			draw();
+			if (progress < 1) requestAnimationFrame(step);
+		};
+		requestAnimationFrame(step);
+	}
 
 	$effect(() => {
 		const ro = new ResizeObserver(([e]) => (stageW = e.contentRect.width));
-		ro.observe(wrap);
-		const io = new IntersectionObserver(([e]) => e.isIntersecting && ((shown = true), io.disconnect()), { threshold: 0.25 });
-		io.observe(wrap);
+		ro.observe(stage);
+		const io = new IntersectionObserver(
+			([e]) => {
+				if (e.isIntersecting && !started) {
+					started = true;
+					animate();
+					io.disconnect();
+				}
+			},
+			{ threshold: 0.25 }
+		);
+		io.observe(stage);
 		return () => (ro.disconnect(), io.disconnect());
 	});
+
+	// 尺寸、資料或 hover 改變時重畫一次
+	$effect(() => {
+		void geo;
+		void visible;
+		void hover;
+		draw();
+	});
+
+	const inside = (pts: number[][], x: number, y: number) => {
+		let sign = 0;
+		for (let i = 0; i < pts.length; i++) {
+			const [ax, ay] = pts[i];
+			const [bx, by] = pts[(i + 1) % pts.length];
+			const cross = (bx - ax) * (y - ay) - (by - ay) * (x - ax);
+			if (cross !== 0) {
+				if (sign === 0) sign = Math.sign(cross);
+				else if (Math.sign(cross) !== sign) return false;
+			}
+		}
+		return true;
+	};
+
+	function onMove(e: PointerEvent) {
+		const rect = canvas.getBoundingClientRect();
+		const x = e.clientX - rect.left;
+		const y = e.clientY - rect.top;
+		// 從最前面的柱子開始找
+		for (let i = visible.length - 1; i >= 0; i--) {
+			const c = visible[i];
+			const { l, t, r, b, h } = outline(c, barHeight(c.count) * progress);
+			const hex = [
+				[l[0], l[1] - h],
+				[t[0], t[1] - h],
+				[r[0], r[1] - h],
+				r,
+				b,
+				l
+			];
+			if (inside(hex, x, y)) {
+				if (hover?.cell.date !== c.date || Math.abs(hover.x - x) > 2 || Math.abs(hover.y - y) > 2) hover = { cell: c, x, y };
+				return;
+			}
+		}
+		hover = null;
+	}
 
 	const fmt = (date: string) => new Date(date + 'T00:00:00').toLocaleDateString('zh-TW', { month: 'long', day: 'numeric', weekday: 'short' });
 </script>
@@ -73,43 +221,26 @@
 		<div><b>{stats.best.count}</b><span>次，最忙的一天</span></div>
 	</div>
 
-	<div class="stage" bind:this={wrap} style:height="{Math.max(260, 420 * scale)}px">
-		<div
-			class="iso"
-			class:shown
-			style:--cell="{CELL}px"
-			style:--gap="{GAP}px"
-			style:width="{weeks * (CELL + GAP)}px"
-			style:height="{7 * (CELL + GAP)}px"
-			style:--s={scale}
-		>
-			{#each visible as c (c.date)}
-				<div
-					class="bar l{level(c.count)}"
-					style:left="{c.w * (CELL + GAP)}px"
-					style:top="{c.d * (CELL + GAP)}px"
-					style:--h="{shown ? height(c.count) : 0}px"
-					style:--delay="{(c.w + c.d) * 9}ms"
-					onpointerenter={() => (hover = c)}
-					onpointerleave={() => (hover = null)}
-					role="presentation"
-				>
-					<i class="top"></i><i class="front"></i><i class="side"></i>
-				</div>
-			{/each}
-		</div>
+	<div class="stage" bind:this={stage}>
+		<canvas
+			bind:this={canvas}
+			style:height="{geo.height}px"
+			onpointermove={onMove}
+			onpointerleave={() => (hover = null)}
+			aria-label="過去一年每天的部署次數，共 {stats.total} 次"
+		></canvas>
 
-		<div class="tip" class:on={hover}>
-			{#if hover}
-				<b>{hover.count} 次部署</b>
-				<span>{fmt(hover.date)}</span>
-			{/if}
-		</div>
+		{#if hover}
+			<div class="tip" style:left="{hover.x}px" style:top="{hover.y}px">
+				<b>{hover.cell.count} 次部署</b>
+				<span>{fmt(hover.cell.date)}</span>
+			</div>
+		{/if}
 	</div>
 
 	<div class="legend">
 		<span>少</span>
-		{#each [0, 1, 2, 3, 4] as l (l)}<i class="l{l}"></i>{/each}
+		{#each LEVELS as c (c)}<i style:background={c}></i>{/each}
 		<span>多</span>
 	</div>
 </div>
@@ -131,14 +262,15 @@
 	}
 	.stats div {
 		padding: 18px 20px;
-		border-radius: 18px;
+		border-radius: var(--r-md);
 		background: var(--surface);
 		border: 1px solid var(--line);
 		display: grid;
 		gap: 4px;
 	}
 	.stats b {
-		font: 700 clamp(28px, 3.4vw, 40px) / 1 var(--font-display);
+		font: 800 clamp(28px, 3.4vw, 40px) / 1 var(--font-display);
+		letter-spacing: -0.03em;
 		color: var(--text);
 	}
 	.stats span {
@@ -148,96 +280,25 @@
 
 	.stage {
 		position: relative;
-		display: grid;
-		place-items: center;
-		overflow: hidden;
-		min-height: 220px;
 	}
-	.iso {
-		position: relative;
-		transform: scale(var(--s)) rotateX(58deg) rotateZ(-38deg);
-		transform-style: preserve-3d;
-		flex: none;
-	}
-	.bar {
-		position: absolute;
-		width: var(--cell);
-		height: var(--cell);
-		transform-style: preserve-3d;
-		--c: #19191c;
-		--h: 0px;
-		cursor: default;
-	}
-	.bar i {
-		position: absolute;
+	canvas {
 		display: block;
-		transition: transform 0.9s cubic-bezier(0.2, 0.9, 0.2, 1.15) var(--delay),
-			width 0.9s cubic-bezier(0.2, 0.9, 0.2, 1.15) var(--delay),
-			height 0.9s cubic-bezier(0.2, 0.9, 0.2, 1.15) var(--delay),
-			filter 0.2s;
-	}
-	.top {
-		inset: 0;
-		background: var(--c);
-		transform: translateZ(var(--h));
-		border-radius: 2px;
-	}
-	/* 正面：沿著下緣立起來 */
-	.front {
-		left: 0;
-		top: 100%;
 		width: 100%;
-		height: var(--h);
-		transform-origin: top;
-		transform: rotateX(90deg);
-		background: color-mix(in oklab, var(--c) 62%, #000);
-	}
-	/* 側面：沿著右緣立起來 */
-	.side {
-		top: 0;
-		left: 100%;
-		height: 100%;
-		width: var(--h);
-		transform-origin: left;
-		transform: rotateY(-90deg);
-		background: color-mix(in oklab, var(--c) 40%, #000);
-	}
-	.bar:hover i {
-		filter: brightness(1.6);
-	}
-	.l1 {
-		--c: #3a3170;
-	}
-	.l2 {
-		--c: #5f50c9;
-	}
-	.l3 {
-		--c: #8b7bff;
-	}
-	.l4 {
-		--c: #4cc9f0;
 	}
 
 	.tip {
 		position: absolute;
-		top: 8px;
-		right: 8px;
+		z-index: 2;
+		translate: -50% calc(-100% - 14px);
 		padding: 10px 14px;
-		border-radius: 14px;
-		background: rgb(14 14 16 / 0.85);
+		border-radius: var(--r-sm);
+		background: rgb(14 14 18 / 0.92);
 		border: 1px solid var(--line);
-		backdrop-filter: blur(10px);
 		display: grid;
 		gap: 2px;
 		font-size: 13px;
-		opacity: 0;
-		transform: translateY(-6px);
-		transition: 0.25s;
+		white-space: nowrap;
 		pointer-events: none;
-	}
-	.tip.on {
-		opacity: 1;
-		transform: none;
 	}
 	.tip span {
 		color: var(--muted);
@@ -254,6 +315,5 @@
 		width: 12px;
 		height: 12px;
 		border-radius: 3px;
-		background: var(--c, #19191c);
 	}
 </style>

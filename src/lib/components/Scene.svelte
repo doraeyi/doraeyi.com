@@ -33,15 +33,17 @@
 
 	onMount(() => {
 		const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-		const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
-		renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+		// 高解析度螢幕本身就夠銳利，不需要再開 MSAA；解析度上限 1.5 倍，省下大量填色成本
+		const dpr = Math.min(devicePixelRatio, 1.5);
+		const renderer = new THREE.WebGLRenderer({ canvas, antialias: dpr < 1.5, alpha: true, powerPreference: 'high-performance' });
+		renderer.setPixelRatio(dpr);
 		renderer.setClearColor(0x000000, 0);
 
 		const scene = new THREE.Scene();
 		const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
 		camera.position.set(0, 0, 6);
 
-		// ---- 主角：會呼吸的虹彩球 ----
+		// ---- 主角：會呼吸的石墨球 ----
 		const blobUniforms = {
 			uTime: { value: 0 },
 			uAmp: { value: 0.24 },
@@ -49,7 +51,7 @@
 			uMouse: { value: new THREE.Vector2() }
 		};
 		const blob = new THREE.Mesh(
-			new THREE.IcosahedronGeometry(1.35, 96),
+			new THREE.IcosahedronGeometry(1.35, 32), // 細分 32 ≈ 6.5 萬頂點，96 會到 56 萬
 			new THREE.ShaderMaterial({
 				uniforms: blobUniforms,
 				vertexShader: /* glsl */ `
@@ -129,7 +131,7 @@
 		ring1.add(moon);
 
 		// ---- 星塵 ----
-		const COUNT = innerWidth < 700 ? 1400 : 3200;
+		const COUNT = innerWidth < 700 ? 900 : 2000;
 		const pos = new Float32Array(COUNT * 3);
 		const col = new Float32Array(COUNT * 3);
 		const tints = [new THREE.Color('#ffffff'), new THREE.Color('#ffffff'), new THREE.Color('#8b7bff'), new THREE.Color('#4cc9f0')];
@@ -199,9 +201,13 @@
 		const onVis = () => (visible = !document.hidden);
 		document.addEventListener('visibilitychange', onVis);
 
+		let frame = 0;
 		const tick = () => {
 			raf = requestAnimationFrame(tick);
 			if (!visible) return;
+			// 捲到內容區時球已經淡到背景，改成 30fps 就夠了，把效能留給頁面本身
+			frame++;
+			if (blobUniforms.uFade.value < 0.3 && frame % 2) return;
 			const t = reduced ? 0 : clock.getElapsedTime();
 			mouse.lerp(mouseTarget, 0.05);
 			smooth += (scroll - smooth) * 0.06;

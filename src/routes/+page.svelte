@@ -64,7 +64,7 @@
 <Scene />
 
 <header class:scrolled>
-	<a class="logo" href="#top"><i></i>{profile.handle}</a>
+	<a class="logo" href="#top"><i class="sphere"></i>{profile.handle}</a>
 	<nav>
 		{#each SECTIONS as [id, label] (id)}
 			<a href="#{id}" class:active={active === id} aria-current={active === id ? 'true' : undefined}>{label}</a>
@@ -137,7 +137,7 @@
 		<div class="grid">
 			{#each shown as project, i (project.id)}
 				<div class="cell" class:wide={project.featured} {@attach reveal((i % 3) * 90)}>
-					<ProjectCard {project} index={i} />
+					<ProjectCard {project} index={i} total={shown.length} />
 				</div>
 			{/each}
 		</div>
@@ -195,7 +195,7 @@
 	<!-- 聯絡 -->
 	<section id="contact" class="section contact">
 		<p class="eyebrow" {@attach reveal()}>04 — 聯絡</p>
-		<h2 class="extrude" {@attach reveal(80)}>一起做<br />點什麼？</h2>
+		<h2 class="big" {@attach reveal(80)}>一起做<br /><em>點什麼？</em></h2>
 		<p class="lede" {@attach reveal(160)}>有想法、有合作，或只是想聊聊，都歡迎找我。</p>
 		<div class="contact-links" {@attach reveal(240)}>
 			{#if profile.email}
@@ -238,7 +238,7 @@
 		font: 800 clamp(28px, 6vw, 64px) var(--font-display);
 		letter-spacing: -0.03em;
 		color: var(--text);
-		animation: introText 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+		animation: introText 0.9s var(--ease) both;
 	}
 	@keyframes introText {
 		from {
@@ -276,9 +276,9 @@
 		justify-content: space-between;
 		gap: 16px;
 		padding: 10px 12px 10px 20px;
-		border-radius: 99px;
+		border-radius: var(--r-pill);
 		border: 1px solid transparent;
-		transition: 0.4s;
+		transition: 0.4s var(--ease);
 	}
 	header.scrolled {
 		background: rgb(10 10 12 / 0.6);
@@ -289,15 +289,13 @@
 		display: flex;
 		align-items: center;
 		gap: 10px;
-		font: 700 18px var(--font-display);
+		font: 800 18px var(--font-display);
+		letter-spacing: -0.02em;
 		text-decoration: none;
 	}
 	.logo i {
 		width: 18px;
 		height: 18px;
-		border-radius: 50%;
-		background: radial-gradient(circle at 32% 30%, #fff, #8a8a92 45%, #1c1c20);
-		box-shadow: 0 0 12px rgb(255 255 255 / 0.25);
 	}
 	nav {
 		display: flex;
@@ -305,7 +303,7 @@
 	}
 	nav a {
 		padding: 8px 14px;
-		border-radius: 99px;
+		border-radius: var(--r-pill);
 		text-decoration: none;
 		font-size: 14px;
 		color: var(--text-soft);
@@ -325,7 +323,7 @@
 		align-items: center;
 		gap: 8px;
 		padding: 8px 14px;
-		border-radius: 99px;
+		border-radius: var(--r-pill);
 		font: 500 12px var(--font-mono);
 		background: rgb(255 255 255 / 0.04);
 		color: var(--text-soft);
@@ -336,12 +334,12 @@
 		width: 7px;
 		height: 7px;
 		border-radius: 50%;
-		background: var(--accent);
+		background: var(--accent-2);
 		animation: pulse 2s infinite;
 	}
 	@keyframes pulse {
 		0% {
-			box-shadow: 0 0 0 0 rgb(169 156 255 / 0.7);
+			box-shadow: 0 0 0 0 rgb(76 201 240 / 0.6);
 		}
 		70% {
 			box-shadow: 0 0 0 8px transparent;
@@ -375,8 +373,8 @@
 	}
 	h2 {
 		margin: 0;
-		font: 800 clamp(44px, 7.5vw, 104px) / 0.98 var(--font-display);
-		letter-spacing: -0.035em;
+		font: 800 clamp(44px, 7.5vw, 104px) / 1.02 var(--font-display);
+		letter-spacing: -0.04em;
 	}
 	h2 em {
 		font-style: normal;
@@ -396,15 +394,14 @@
 		align-items: center;
 		gap: 10px;
 		padding: 15px 26px;
-		border-radius: 99px;
+		border-radius: var(--r-pill);
 		font-weight: 600;
 		font-size: 15px;
 		text-decoration: none;
 		transition:
-			transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+			transform 0.35s var(--ease),
 			background 0.3s,
 			box-shadow 0.3s;
-		will-change: transform;
 	}
 	.btn.primary {
 		color: var(--bg);
@@ -417,7 +414,6 @@
 	.btn.ghost {
 		border: 1px solid rgb(255 255 255 / 0.2);
 		background: rgb(255 255 255 / 0.04);
-		backdrop-filter: blur(8px);
 	}
 	.btn.ghost:hover {
 		background: rgb(255 255 255 / 0.1);
@@ -446,7 +442,7 @@
 		font: 500 14px var(--font-mono);
 		letter-spacing: 0.06em;
 		color: var(--text-soft);
-		animation: fadeUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) 0.6s both;
+		animation: fadeUp 0.8s var(--ease) 0.6s both;
 	}
 	.kicker .line {
 		width: 48px;
@@ -455,8 +451,8 @@
 	}
 	h1 {
 		margin: 0;
-		font: 800 clamp(44px, 13.5vw, 220px) / 0.86 var(--font-display);
-		letter-spacing: -0.055em;
+		font: 800 clamp(44px, 13.5vw, 220px) / 0.9 var(--font-display);
+		letter-spacing: -0.05em;
 		perspective: 800px;
 		display: flex;
 		white-space: nowrap;
@@ -469,7 +465,7 @@
 		color: transparent;
 		animation: flipIn 1.1s cubic-bezier(0.2, 0.9, 0.25, 1.2) both;
 		animation-delay: calc(0.55s + var(--i) * 45ms);
-		transition: transform 0.5s cubic-bezier(0.2, 0.9, 0.25, 1.4);
+		transition: transform 0.5s var(--ease);
 	}
 	.ch:hover {
 		transform: translateY(-14px) rotateX(-20deg) rotateY(14deg);
@@ -493,14 +489,14 @@
 		font-size: clamp(18px, 2vw, 24px);
 		line-height: 1.55;
 		color: var(--text-soft);
-		animation: fadeUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) 0.9s both;
+		animation: fadeUp 0.8s var(--ease) 0.9s both;
 	}
 	.cta {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 14px;
 		margin-top: 40px;
-		animation: fadeUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) 1s both;
+		animation: fadeUp 0.8s var(--ease) 1s both;
 	}
 	.hero-foot {
 		position: absolute;
@@ -510,7 +506,7 @@
 		display: flex;
 		align-items: flex-end;
 		justify-content: space-between;
-		animation: fadeUp 0.8s 1.15s both;
+		animation: fadeUp 0.8s var(--ease) 1.15s both;
 	}
 	.scroll-hint {
 		width: 26px;
@@ -546,7 +542,8 @@
 	}
 	dd {
 		margin: 4px 0 0;
-		font: 700 22px var(--font-display);
+		font: 800 22px var(--font-display);
+		letter-spacing: -0.02em;
 	}
 	@media (max-width: 700px) {
 		.hero {
@@ -568,7 +565,7 @@
 	.ribbon {
 		display: flex;
 		width: max-content;
-		transform: rotateX(18deg) rotateZ(-3deg);
+		transform: rotateX(14deg);
 		border-block: 1px solid var(--line);
 		margin: 0 -40px;
 	}
@@ -579,8 +576,8 @@
 		padding: 18px 14px;
 		white-space: nowrap;
 		animation: marquee 38s linear infinite;
-		font: 700 clamp(26px, 3.6vw, 46px) var(--font-display);
-		letter-spacing: -0.02em;
+		font: 800 clamp(26px, 3.6vw, 46px) var(--font-display);
+		letter-spacing: -0.03em;
 		color: var(--text-soft);
 	}
 	.track i {
@@ -603,7 +600,7 @@
 	}
 	.filters button {
 		padding: 9px 16px;
-		border-radius: 99px;
+		border-radius: var(--r-pill);
 		border: 1px solid var(--line);
 		background: rgb(255 255 255 / 0.03);
 		color: var(--text-soft);
@@ -676,7 +673,7 @@
 		--my: 50%;
 		position: relative;
 		aspect-ratio: 0.68;
-		border-radius: 28px;
+		border-radius: var(--r-lg);
 		padding: 28px;
 		display: flex;
 		flex-direction: column;
@@ -686,7 +683,7 @@
 		border: 1px solid rgb(255 255 255 / 0.12);
 		transform: rotateX(var(--rx)) rotateY(var(--ry));
 		transform-style: preserve-3d;
-		transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+		transition: transform 0.6s var(--ease);
 		box-shadow: 0 60px 100px -40px rgb(0 0 0 / 0.9);
 		animation: float 8s ease-in-out infinite;
 	}
@@ -702,14 +699,15 @@
 	.avatar {
 		width: 100%;
 		flex: 1;
-		border-radius: 20px;
+		border-radius: var(--r-md);
 		overflow: hidden;
 		display: grid;
 		place-items: center;
+		/* 跟作品卡封面同一種做法：深底 + 色階光暈 */
 		background:
-			radial-gradient(circle at 30% 20%, rgb(255 255 255 / 0.25), transparent 45%),
-			radial-gradient(circle at 80% 90%, rgb(76 201 240 / 0.45), transparent 55%),
-			linear-gradient(160deg, #5a4bd6, #1a1540);
+			radial-gradient(110% 90% at 80% 0%, color-mix(in oklab, var(--accent) 38%, transparent), transparent 65%),
+			radial-gradient(90% 80% at 0% 100%, color-mix(in oklab, var(--accent-2) 22%, transparent), transparent 70%),
+			#0c0c10;
 		transform: translateZ(40px);
 	}
 	.avatar img {
@@ -718,16 +716,17 @@
 		object-fit: cover;
 	}
 	.avatar span {
-		font: 800 140px var(--font-display);
+		font: 800 150px/1 var(--font-display);
 		color: transparent;
-		-webkit-text-stroke: 1.5px rgb(255 255 255 / 0.8);
+		-webkit-text-stroke: 1.5px rgb(255 255 255 / 0.55);
 	}
 	.id-meta {
 		display: grid;
 		transform: translateZ(30px);
 	}
 	.id-meta b {
-		font: 700 26px var(--font-display);
+		font: 800 26px var(--font-display);
+		letter-spacing: -0.03em;
 	}
 	.id-meta span,
 	.id-row {
@@ -769,19 +768,18 @@
 	}
 	.skills li {
 		padding: 10px 18px;
-		border-radius: 14px;
+		border-radius: var(--r-pill);
 		background: var(--surface);
 		border: 1px solid var(--line);
 		font-weight: 600;
 		font-size: 15px;
 		transition:
-			transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.5),
-			border-color 0.3s,
-			box-shadow 0.3s;
+			transform 0.4s var(--ease),
+			border-color 0.3s;
 	}
 	.skills li:hover {
-		transform: translateY(-6px) rotate(-3deg) scale(1.06);
-		border-color: rgb(255 255 255 / 0.4);
+		transform: translateY(-4px);
+		border-color: color-mix(in oklab, var(--accent) 55%, transparent);
 	}
 
 	/* ---------- 聯絡 ---------- */
@@ -795,20 +793,8 @@
 	.contact .lede {
 		margin-inline: auto;
 	}
-	.extrude {
-		font-size: clamp(64px, 13vw, 190px);
-		color: var(--text);
-		transform: perspective(900px) rotateX(16deg);
-		text-shadow:
-			0 1px 0 #cfcfd4,
-			0 2px 0 #b5b5bb,
-			0 3px 0 #9b9ba2,
-			0 4px 0 #818188,
-			0 5px 0 #68686f,
-			0 6px 0 #505056,
-			0 7px 0 #3b3b40,
-			0 8px 0 #29292d,
-			0 20px 30px rgb(0 0 0 / 0.7);
+	h2.big {
+		font-size: clamp(56px, 11vw, 160px);
 	}
 	.contact-links {
 		display: flex;
@@ -840,7 +826,7 @@
 		z-index: 70;
 		max-width: 380px;
 		padding: 12px 16px;
-		border-radius: 14px;
+		border-radius: var(--r-sm);
 		font-size: 13px;
 		background: rgb(255 176 32 / 0.12);
 		border: 1px solid rgb(255 176 32 / 0.4);

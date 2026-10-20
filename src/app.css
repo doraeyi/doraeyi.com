@@ -5,13 +5,31 @@
 	--text: #ededef;
 	--text-soft: #cfcfd8;
 	--muted: #92929c;
+
+	/* 全站只有這一組色階：紫 → 藍。任何有顏色的東西都從這裡取 */
 	--accent: #8b7bff;
 	--accent-2: #4cc9f0;
 	--accent-grad: linear-gradient(100deg, var(--accent), var(--accent-2));
-	--font-display: 'Syne', 'Noto Sans TC', system-ui, sans-serif;
+
+	/* 中英文用同一套字：Manrope 配思源黑體，標題粗細一致才不會像兩種風格拼起來 */
+	--font-display: 'Manrope', 'Noto Sans TC', system-ui, sans-serif;
 	--font-body: 'Manrope', 'Noto Sans TC', system-ui, sans-serif;
 	--font-mono: 'JetBrains Mono', ui-monospace, monospace;
 	--pad: clamp(16px, 5vw, 72px);
+
+	/* 圓角只有三種：小元件、方塊、卡片；按鈕跟標籤一律膠囊形 */
+	--r-sm: 12px;
+	--r-md: 18px;
+	--r-lg: 26px;
+	--r-pill: 999px;
+
+	/* 動態只用一條曲線 */
+	--ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+	/* 共用的 3D 材質：石墨球體，跟 Three.js 那顆球同一種質感。輪廓光用 .sphere class 加 */
+	--tint: var(--accent);
+	--sphere: radial-gradient(circle at 34% 28%, rgb(255 255 255 / 0.55), transparent 16%),
+		radial-gradient(circle at 50% 45%, #2a2a33, #0b0b0f 72%);
 	color-scheme: dark;
 }
 
@@ -50,13 +68,23 @@ a {
 	border-radius: 6px;
 }
 
+/* 輪廓光寫在 class 裡（不放在 :root 變數），才會吃到各元素自己的 --tint */
+.sphere {
+	border-radius: 50%;
+	background: var(--sphere);
+	box-shadow:
+		inset -8px -12px 22px -6px color-mix(in oklab, var(--tint) 85%, transparent),
+		inset 6px 8px 16px -8px rgb(255 255 255 / 0.35),
+		0 0 40px -8px color-mix(in oklab, var(--tint) 45%, transparent);
+}
+
 /* 捲到才出場 */
 .reveal {
 	opacity: 0;
 	transform: perspective(900px) translate3d(0, 36px, -40px) rotateX(10deg);
 	transition:
-		opacity 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) var(--delay, 0ms),
-		transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) var(--delay, 0ms);
+		opacity 0.7s var(--ease) var(--delay, 0ms),
+		transform 0.9s var(--ease) var(--delay, 0ms);
 }
 .reveal.in {
 	opacity: 1;

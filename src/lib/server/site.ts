@@ -6,14 +6,6 @@ import { fetchDeployActivity, fetchVercelProjects, hasVercel } from './vercel.js
 const TTL = 5 * 60 * 1000;
 let cache: { at: number; data: Promise<SiteData> } | null = null;
 
-const PALETTE = ['#7c5cff', '#00d1ff', '#ff4fa3', '#ffb020', '#3ddc97', '#ff6b4a', '#4f7bff'];
-
-function hashColor(s: string) {
-	let h = 0;
-	for (const c of s) h = (h * 31 + c.charCodeAt(0)) | 0;
-	return PALETTE[Math.abs(h) % PALETTE.length];
-}
-
 /** 失敗時記 log 回傳 fallback，一個來源掛掉不會拖垮整頁 */
 async function safe<T>(label: string, fn: () => Promise<T>, fallback: T): Promise<T> {
 	try {
@@ -33,7 +25,7 @@ function applyMeta(p: Project, m: ProjectMeta | undefined): Project {
 		url: m?.url || p.url,
 		repo: m?.repo || p.repo,
 		featured: m?.featured ?? p.featured,
-		accent: m?.accent || p.accent || hashColor(p.id)
+		accent: m?.accent || p.accent
 	};
 }
 
