@@ -3,6 +3,7 @@
 	import Scene from '#lib/components/Scene.svelte';
 	import ProjectCard from '#lib/components/ProjectCard.svelte';
 	import Activity from '#lib/components/Activity.svelte';
+	import PerfPanel from '#lib/components/PerfPanel.svelte';
 	import { magnetic, reveal, tilt } from '#lib/motion.js';
 	import type { PageProps } from './$types';
 
@@ -40,6 +41,11 @@
 
 	let progress = $state(0);
 	let scrolled = $state(false);
+	// 網址加 ?debug=perf 才顯示量測面板
+	let showPerf = $state(false);
+	$effect(() => {
+		showPerf = new URLSearchParams(location.search).get('debug') === 'perf';
+	});
 
 	const onScroll = () => {
 		const max = document.documentElement.scrollHeight - innerHeight;
@@ -214,6 +220,8 @@
 	<span>© {new Date().getFullYear()} {profile.name}</span>
 	<span>doraeyi.com · 用 SvelteKit + Three.js 做的</span>
 </footer>
+
+{#if showPerf}<PerfPanel />{/if}
 
 {#if dev && (!data.source.vercel || !data.source.database)}
 	<aside class="dev-note">
