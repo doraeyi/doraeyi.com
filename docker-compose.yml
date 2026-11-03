@@ -1,0 +1,35 @@
+services:
+  app:
+    build: .
+    image: ghcr.io/doraeyi/doraeyi-site:latest
+    restart: unless-stopped
+    # VC_TOKEN、VC_TEAM_ID、DATABASE_URL 都放在 VM 上的 .env，不進 git
+    env_file:
+      - .env
+    environment:
+      - PORT=3100
+      - HOST=0.0.0.0
+      - ORIGIN=https://doraeyi.com
+    # 這個專案沒有本機資料：資料庫是 NAS 上的 MySQL，作品清單從 Vercel API 抓，
+    # 所以不需要掛 ./data。
+    # 只綁在 VM 自己的 127.0.0.1，方便在 VM 上 curl 除錯；對外流量是 Traefik
+    # 透過 web 網路依 Host 轉進來，不經過這個 port。
+    ports:
+      - '127.0.0.1:3100:3100'
+    networks:
+      - default
+      - web
+    labels:
+      - 'traefik.enable=true'
+      # 網站本體放在根網域；blog 在 blog.doraeyi.com，是另一個容器
+      - 'traefik.http.routers.doraeyi-site.rule=Host(`doraeyi.com`) || Host(`www.doraeyi.com`)'
+      - 'traefik.http.routers.doraeyi-site.entrypoints=web'
+      - 'traefik.http.services.doraeyi-site.loadbalancer.server.port=3100'
+      # 容器同時在 default 跟 web 兩個網路上，不指定的話 Traefik 可能挑到
+      # 它自己沒接上的 default，每個請求都會逾時
+      - 'traefik.docker.network=web'
+
+networks:
+  # VM 上 Traefik 已經接著的外部網路，不是這個 compose 建的，只是引用
+  web:
+    external: true

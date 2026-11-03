@@ -1,6 +1,7 @@
 <script lang="ts">
 	// ?debug=perf 才會出現的量測面板：在使用者自己的電腦上看真實數字
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import { sceneInfo } from '#lib/scene/stats.svelte.js';
 
 	const MODE_LABEL = { pending: '載入中', worker: 'WebGL（Worker）', main: 'WebGL（主執行緒）', lite: 'CSS 球' } as const;
@@ -50,8 +51,9 @@
 		};
 	});
 
+	// 用 page.url 而不是 location：面板也會在伺服器端渲染
 	const link = (scene: string) => {
-		const url = new URL(location.href);
+		const url = new URL(page.url.href);
 		url.searchParams.set('scene', scene);
 		return url.pathname + url.search;
 	};

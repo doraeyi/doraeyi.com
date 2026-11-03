@@ -1,0 +1,84 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/doraeyi-site
+
+jobs:
+  # 先跑型別檢查跟 lint；這步失敗就不會部署，線上繼續跑上一版
+  # （後面的 Docker build 遇到壞掉的 vite build 也會失敗）
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm check
+
+      - name: Lint
+        run: pnpm lint
+
+  build-and-push:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    # 直接在 VM 上的 self-hosted runner 跑：runner 自己往外連 GitHub 拿工作，
+    # VM 不需要開任何對外的 SSH。
+    # 第一次要先註冊：repo Settings → Actions → Runners → New self-hosted runner
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            docker-compose.yml
+          sparse-checkout-cone-mode: false
+
+      # ~/doraeyi-site 裡的 .env 不會被動到：它不在 repo 裡，這裡只同步
+      # docker-compose.yml。放在 runner 使用者的家目錄，不需要 sudo。
+      - name: Sync compose file and redeploy
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/doraeyi-site"
+          cp docker-compose.yml "$HOME/doraeyi-site/docker-compose.yml"
+          cd "$HOME/doraeyi-site"
+          test -f .env || { echo "::error::$HOME/doraeyi-site/.env 不存在，請先在 VM 上建立"; exit 1; }
+          docker compose pull
+          docker compose up -d --remove-orphans
+          docker image prune -f

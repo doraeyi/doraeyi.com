@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { dev } from '$app/env';
+	import { page } from '$app/state';
 	import Scene from '#lib/components/Scene.svelte';
 	import ProjectCard from '#lib/components/ProjectCard.svelte';
 	import Activity from '#lib/components/Activity.svelte';
@@ -42,10 +43,7 @@
 	let progress = $state(0);
 	let scrolled = $state(false);
 	// 網址加 ?debug=perf 才顯示量測面板
-	let showPerf = $state(false);
-	$effect(() => {
-		showPerf = new URLSearchParams(location.search).get('debug') === 'perf';
-	});
+	const showPerf = $derived(page.url.searchParams.get('debug') === 'perf');
 
 	const onScroll = () => {
 		const max = document.documentElement.scrollHeight - innerHeight;

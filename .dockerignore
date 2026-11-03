@@ -1,0 +1,15 @@
+node_modules
+**/node_modules
+.svelte-kit
+build
+.vercel
+.git
+.github
+.env
+.env.*
+!.env.example
+.vscode
+.claude
+db
+docs
+README.md

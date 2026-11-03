@@ -104,7 +104,10 @@
 			raf = 0;
 			const max = Math.max(1, document.documentElement.scrollHeight - innerHeight);
 			send({ type: 'scroll', state: { hero: scrollY / innerHeight, progress: scrollY / max } });
-			if (pointer) send({ type: 'pointer', x: pointer[0], y: pointer[1] }), (pointer = null);
+			if (pointer) {
+				send({ type: 'pointer', x: pointer[0], y: pointer[1] });
+				pointer = null;
+			}
 		};
 		const schedule = () => (raf ||= requestAnimationFrame(flush));
 		const onMove = (e: PointerEvent) => {

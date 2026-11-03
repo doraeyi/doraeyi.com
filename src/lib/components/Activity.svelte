@@ -11,12 +11,15 @@
 
 	// 從 52 週前的星期日排到今天，跟 GitHub 一樣
 	const grid = $derived.by(() => {
-		const today = new Date();
-		today.setHours(0, 0, 0, 0);
-		const start = new Date(today);
-		start.setDate(start.getDate() - (WEEKS - 1) * 7 - start.getDay());
+		const now = new Date();
+		const y = now.getFullYear();
+		const m = now.getMonth();
+		const startDay = now.getDate() - (WEEKS - 1) * 7 - now.getDay();
+		const total = (WEEKS - 1) * 7 + now.getDay() + 1;
 		const cells: { date: string; count: number; w: number; d: number }[] = [];
-		for (let cur = new Date(start), i = 0; cur <= today; cur.setDate(cur.getDate() + 1), i++) {
+		for (let i = 0; i < total; i++) {
+			// 用建構子算日期，不改同一個 Date 物件（跨月、跨年都會自動進位）
+			const cur = new Date(y, m, startDay + i);
 			const date = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`;
 			cells.push({ date, count: counts.get(date) ?? 0, w: Math.floor(i / 7), d: i % 7 });
 		}

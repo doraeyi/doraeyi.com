@@ -31,7 +31,7 @@ doraeyi.com 是我的個人網站。作品區不用手動維護：網站在伺�
 
 ```mermaid
 flowchart LR
-    Visitor["訪客"] --> Page["SvelteKit 頁面<br/>Vercel"]
+    Visitor["訪客"] --> Traefik["Traefik<br/>VM"] --> Page["SvelteKit 容器<br/>adapter-node"]
     Page --> Load["+page.server.ts<br/>快取 5 分鐘"]
     Load -- "VC_TOKEN" --> VercelAPI["Vercel API<br/>專案 & 部署紀錄"]
     Load -- "DATABASE_URL" --> DB[("MySQL<br/>profile / project_meta")]
@@ -45,7 +45,7 @@ flowchart LR
 | 框架 | SvelteKit 3、Svelte 5、TypeScript、Vite |
 | 視覺 | Three.js |
 | 資料 | Vercel REST API、MySQL（mysql2） |
-| 部署 | Vercel（`@sveltejs/adapter-vercel`） |
+| 部署 | Docker（`@sveltejs/adapter-node`）、GitHub Actions、GHCR、VM 上的 Traefik |
 
 ## 📂 專案結構
 
@@ -111,4 +111,12 @@ VALUES ('yiwallet', 'YIWallet', '記帳 App……', JSON_ARRAY('記帳', 'PWA'),
 
 ## 🚢 部署
 
-在 Vercel 匯入這個 repo，設定上面的環境變數，再把 `doraeyi.com` 綁到這個專案。
+跟 blog 同一套：推到 `main` 會觸發 `.github/workflows/deploy.yml`。
+
+1. **check**：`pnpm check`（型別檢查）＋ `pnpm lint`（ESLint），失敗就停，線上繼續跑上一版
+2. **build-and-push**：build Docker image，推到 `ghcr.io/doraeyi/doraeyi-site`（`latest` 跟 commit SHA 兩個 tag）
+3. **deploy**：在 VM 的 self-hosted runner 上，把 `docker-compose.yml` 同步到 `~/doraeyi-site/`，然後 `docker compose pull && up -d`
+
+對外由 VM 上的 Traefik 轉進來：容器接 `web` 外部網路，router `doraeyi-site` 比對 `doraeyi.com` 跟 `www.doraeyi.com`，轉到容器的 3100 port。
+
+`.env` 只放在 VM 的 `~/doraeyi-site/.env`，不進 git，workflow 也不會動它。這個專案沒有本機資料（資料庫在 NAS、作品清單從 Vercel API 抓），所以不用掛 `./data`。

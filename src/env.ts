@@ -13,6 +13,6 @@ export const variables = defineEnvVars({
 	},
 	DATABASE_URL: {
 		schema: optional,
-		description: 'MySQL 連線字串，例如 mysql://user:pass@liam.name404.com:13306/doraeyi'
+		description: 'MySQL 連線字串，例如 mysql://user:pass@host:13306/doraeyi'
 	}
 });
