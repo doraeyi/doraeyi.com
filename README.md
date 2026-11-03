@@ -7,7 +7,7 @@
 ![SvelteKit](https://img.shields.io/badge/SvelteKit-3-FF3E00?style=flat-square&logo=svelte&logoColor=white)
 ![Svelte](https://img.shields.io/badge/Svelte-5-FF3E00?style=flat-square&logo=svelte&logoColor=white)
 ![Three.js](https://img.shields.io/badge/Three.js-0.186-000000?style=flat-square&logo=threedotjs&logoColor=white)
-![MySQL](https://img.shields.io/badge/MySQL-mysql2-4479A1?style=flat-square&logo=mysql&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-better--sqlite3-003B57?style=flat-square&logo=sqlite&logoColor=white)
 ![Vercel](https://img.shields.io/badge/Vercel-hosted-000000?style=flat-square&logo=vercel&logoColor=white)
 
 </div>
@@ -16,7 +16,7 @@
 
 ## 📖 簡介
 
-doraeyi.com 是我的個人網站。作品區不用手動維護：網站在伺服器端呼叫 Vercel API，只要專案有正式環境部署就會自動出現，並畫出一整年的部署熱度圖。自我介紹與每個專案的中文說明、標籤、主色則存在 MySQL，改資料庫網站就跟著變。
+doraeyi.com 是我的個人網站。作品區不用手動維護：網站在伺服器端呼叫 Vercel API，只要專案有正式環境部署就會自動出現，並畫出一整年的部署熱度圖。自我介紹與每個專案的中文說明、標籤、主色則存在 SQLite，改資料庫網站就跟著變。
 
 ## ✨ 功能特色
 
@@ -34,7 +34,7 @@ flowchart LR
     Visitor["訪客"] --> Traefik["Traefik<br/>VM"] --> Page["SvelteKit 容器<br/>adapter-node"]
     Page --> Load["+page.server.ts<br/>快取 5 分鐘"]
     Load -- "VC_TOKEN" --> VercelAPI["Vercel API<br/>專案 & 部署紀錄"]
-    Load -- "DATABASE_URL" --> DB[("MySQL<br/>profile / project_meta")]
+    Load -- "DATABASE_URL" --> DB[("SQLite<br/>profile / project_meta")]
     Load -. 未設定時 .-> Fallback["示範資料"]
 ```
 
@@ -44,7 +44,7 @@ flowchart LR
 | --- | --- |
 | 框架 | SvelteKit 3、Svelte 5、TypeScript、Vite |
 | 視覺 | Three.js |
-| 資料 | Vercel REST API、MySQL（mysql2） |
+| 資料 | Vercel REST API、SQLite（better-sqlite3） |
 | 部署 | Docker（`@sveltejs/adapter-node`）、GitHub Actions、GHCR、VM 上的 Traefik |
 
 ## 📂 專案結構
@@ -93,7 +93,7 @@ pnpm dev
 | --- | --- |
 | `VC_TOKEN` | 到 <https://vercel.com/account/tokens> 建立，用來讀取專案清單與部署紀錄 |
 | `VC_TEAM_ID` | 專案放在 Team 底下才需要 |
-| `DATABASE_URL` | `mysql://user:pass@host:port/doraeyi` |
+| `DATABASE_URL` | SQLite 檔案路徑，沒設就用 `data/doraeyi.db`；VM 上由 compose 設成 `/data/doraeyi.db` |
 
 > 變數名稱不能用 `VERCEL_` 開頭（Vercel 保留給系統變數），所以這裡用 `VC_`。
 
@@ -104,9 +104,18 @@ pnpm dev
 | `profile` | 名字、介紹、技能、連結 |
 | `project_meta` | 以 Vercel 專案名稱為 key，補中文名稱、介紹、標籤、主色、`hidden`、`featured` |
 
+資料表定義在 `db/schema.sql`，伺服器第一次連線時會自動建立，`profile` 也會放入 `src/lib/server/fallback.ts` 的預設值。
+
+在 VM 上修改資料（改完最多 5 分鐘後網站會更新，或重啟容器馬上生效）：
+
+```bash
+cd ~/doraeyi-site
+sqlite3 data/doraeyi.db
+```
+
 ```sql
 INSERT INTO project_meta (vercel_name, title, description, tags, featured)
-VALUES ('yiwallet', 'YIWallet', '記帳 App……', JSON_ARRAY('記帳', 'PWA'), TRUE);
+VALUES ('yi-wallet', 'YIWallet', '記帳 App……', json_array('記帳', 'PWA'), 1);
 ```
 
 ## 🚢 部署
@@ -119,4 +128,4 @@ VALUES ('yiwallet', 'YIWallet', '記帳 App……', JSON_ARRAY('記帳', 'PWA'),
 
 對外由 VM 上的 Traefik 轉進來：容器接 `web` 外部網路，router `doraeyi-site` 比對 `doraeyi.com` 跟 `www.doraeyi.com`，轉到容器的 3100 port。
 
-`.env` 只放在 VM 的 `~/doraeyi-site/.env`，不進 git，workflow 也不會動它。這個專案沒有本機資料（資料庫在 NAS、作品清單從 Vercel API 抓），所以不用掛 `./data`。
+`.env` 只放在 VM 的 `~/doraeyi-site/.env`，不進 git，workflow 也不會動它。SQLite 資料庫掛在 VM 的 `~/doraeyi-site/data/`，重新部署不會不見；要備份就複製 `data/doraeyi.db`。

@@ -13,6 +13,6 @@ export const variables = defineEnvVars({
 	},
 	DATABASE_URL: {
 		schema: optional,
-		description: 'MySQL 連線字串，例如 mysql://user:pass@host:13306/doraeyi'
+		description: 'SQLite 資料庫檔案路徑，沒設就用 data/doraeyi.db（VM 上由 docker-compose 指到 /data/doraeyi.db）'
 	}
 });

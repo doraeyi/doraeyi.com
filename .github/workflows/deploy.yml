@@ -70,7 +70,7 @@ jobs:
             docker-compose.yml
           sparse-checkout-cone-mode: false
 
-      # ~/doraeyi-site 裡的 .env 不會被動到：它不在 repo 裡，這裡只同步
+      # ~/doraeyi-site 裡的 .env 跟 data/ 不會被動到：它們不在 repo 裡，這裡只同步
       # docker-compose.yml。放在 runner 使用者的家目錄，不需要 sudo。
       - name: Sync compose file and redeploy
         run: |

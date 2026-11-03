@@ -1,54 +1,35 @@
--- doraeyi.com 資料庫
--- 在 liam.name404.com 的 MySQL 上執行：
---   mysql -h liam.name404.com -P 13306 -u <user> -p < db/schema.sql
+-- doraeyi.com 資料庫（SQLite）
+-- 伺服器啟動時會自動執行這份檔案（src/lib/server/db.ts），不用手動跑。
+-- 資料庫檔案位置由 DATABASE_URL 決定，VM 上是 ./data/doraeyi.db。
 
-CREATE DATABASE IF NOT EXISTS doraeyi CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE doraeyi;
-
--- 個人資料，只會有 id = 1 這一列
+-- 個人資料，只會有 id = 1 這一列；第一次啟動會放入 src/lib/server/fallback.ts 的預設值
 CREATE TABLE IF NOT EXISTS profile (
-  id          TINYINT UNSIGNED PRIMARY KEY DEFAULT 1,
-  name        VARCHAR(80)   NOT NULL,
-  handle      VARCHAR(80)   NOT NULL,
-  role        VARCHAR(120)  NOT NULL,
-  tagline     VARCHAR(255)  NOT NULL,
-  bio         TEXT          NOT NULL,
-  location    VARCHAR(80)   NOT NULL DEFAULT '',
-  email       VARCHAR(160)  NOT NULL DEFAULT '',
-  avatar_url  VARCHAR(500)  NULL,
-  skills      JSON          NOT NULL,   -- ["Svelte", "Python", ...]
-  links       JSON          NOT NULL,   -- [{"label":"GitHub","url":"https://..."}]
-  updated_at  TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  CONSTRAINT profile_single_row CHECK (id = 1)
+  id          INTEGER PRIMARY KEY CHECK (id = 1),
+  name        TEXT NOT NULL,
+  handle      TEXT NOT NULL,
+  role        TEXT NOT NULL,
+  tagline     TEXT NOT NULL,
+  bio         TEXT NOT NULL,
+  location    TEXT NOT NULL DEFAULT '',
+  email       TEXT NOT NULL DEFAULT '',
+  avatar_url  TEXT,
+  skills      TEXT NOT NULL DEFAULT '[]',   -- JSON：["Svelte", "Python", ...]
+  links       TEXT NOT NULL DEFAULT '[]',   -- JSON：[{"label":"GitHub","url":"https://..."}]
+  updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 每個 Vercel 專案的補充說明（key = Vercel 上的專案名稱）
 -- 沒有在這張表的專案也會顯示，只是用 Vercel 上的名字、沒有介紹
 CREATE TABLE IF NOT EXISTS project_meta (
-  vercel_name  VARCHAR(100) PRIMARY KEY,
-  title        VARCHAR(120) NULL,          -- 顯示名稱，留空就用 vercel_name
-  description  TEXT         NULL,
-  tags         JSON         NULL,          -- ["記帳", "PWA"]
-  url          VARCHAR(500) NULL,          -- 覆寫 Vercel 抓到的網址
-  repo         VARCHAR(500) NULL,
-  accent       VARCHAR(16)  NULL,          -- 卡片主色，例如 #7c5cff
-  featured     BOOLEAN      NOT NULL DEFAULT FALSE,
-  hidden       BOOLEAN      NOT NULL DEFAULT FALSE,  -- 不想公開的專案設 TRUE
-  sort_order   INT          NOT NULL DEFAULT 0,      -- 越小越前面
-  updated_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  vercel_name  TEXT PRIMARY KEY,
+  title        TEXT,                        -- 顯示名稱，留空就用 vercel_name
+  description  TEXT,
+  tags         TEXT,                        -- JSON：["記帳", "PWA"]
+  url          TEXT,                        -- 覆寫 Vercel 抓到的網址
+  repo         TEXT,
+  accent       TEXT,                        -- 卡片主色，例如 #7c5cff；留空就用色階
+  featured     INTEGER NOT NULL DEFAULT 0,  -- 1 = 放大顯示
+  hidden       INTEGER NOT NULL DEFAULT 0,  -- 1 = 不公開
+  sort_order   INTEGER NOT NULL DEFAULT 0,  -- 越小越前面
+  updated_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
-INSERT INTO profile (id, name, handle, role, tagline, bio, location, email, skills, links)
-VALUES (
-  1,
-  'Doraeyi',
-  'doraeyi',
-  '全端開發者 · 產品實作者',
-  '把想法做成每天真的會打開的東西。',
-  '我喜歡從一個小麻煩開始，把它做成一個完整的產品：從資料庫、API 到介面跟動畫都自己來。這裡是我目前上線中的作品。',
-  'Taiwan',
-  '',
-  JSON_ARRAY('TypeScript', 'Svelte', 'Next.js', 'React', 'Python', 'FastAPI', 'MySQL', 'Three.js', 'Vercel'),
-  JSON_ARRAY(JSON_OBJECT('label', 'GitHub', 'url', 'https://github.com/doraeyi'))
-)
-ON DUPLICATE KEY UPDATE id = id;

@@ -3,15 +3,17 @@ services:
     build: .
     image: ghcr.io/doraeyi/doraeyi-site:latest
     restart: unless-stopped
-    # VC_TOKEN、VC_TEAM_ID、DATABASE_URL 都放在 VM 上的 .env，不進 git
+    # VC_TOKEN、VC_TEAM_ID 放在 VM 上的 .env，不進 git
     env_file:
       - .env
     environment:
       - PORT=3100
       - HOST=0.0.0.0
       - ORIGIN=https://doraeyi.com
-    # 這個專案沒有本機資料：資料庫是 NAS 上的 MySQL，作品清單從 Vercel API 抓，
-    # 所以不需要掛 ./data。
+      - DATABASE_URL=/data/doraeyi.db
+    # SQLite 檔案放在 VM 的 ./data，重新部署、換 image 都不會不見
+    volumes:
+      - ./data:/data
     # 只綁在 VM 自己的 127.0.0.1，方便在 VM 上 curl 除錯；對外流量是 Traefik
     # 透過 web 網路依 Host 轉進來，不經過這個 port。
     ports:

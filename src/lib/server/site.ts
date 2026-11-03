@@ -1,5 +1,5 @@
 import type { Project, SiteData } from '#lib/types.js';
-import { getProfile, getProjectMeta, hasDatabase, type ProjectMeta } from './db.js';
+import { getProfile, getProjectMeta, type ProjectMeta } from './db.js';
 import { fallbackActivity, fallbackProfile, fallbackProjects } from './fallback.js';
 import { fetchDeployActivity, fetchVercelProjects, hasVercel } from './vercel.js';
 
@@ -31,11 +31,10 @@ function applyMeta(p: Project, m: ProjectMeta | undefined): Project {
 
 async function load(): Promise<SiteData> {
 	const vercel = hasVercel();
-	const database = hasDatabase();
 
 	const [profile, meta, projects, activity] = await Promise.all([
-		database ? safe('讀取 profile', getProfile, null) : null,
-		database ? safe('讀取 project_meta', getProjectMeta, new Map<string, ProjectMeta>()) : new Map<string, ProjectMeta>(),
+		safe('讀取 profile', getProfile, null),
+		safe('讀取 project_meta', getProjectMeta, new Map<string, ProjectMeta>()),
 		vercel ? safe('讀取 Vercel 專案', fetchVercelProjects, null) : null,
 		vercel ? safe('讀取 Vercel 部署', fetchDeployActivity, null) : null
 	]);

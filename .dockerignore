@@ -10,6 +10,7 @@ build
 !.env.example
 .vscode
 .claude
-db
+db/*.db
 docs
 README.md
+data

@@ -224,7 +224,7 @@
 {#if dev && (!data.source.vercel || !data.source.database)}
 	<aside class="dev-note">
 		{#if !data.source.vercel}<p>作品是<b>示範資料</b>：在 <code>.env</code> 設定 <code>VC_TOKEN</code> 就會換成真的。</p>{/if}
-		{#if !data.source.database}<p>個人資料用預設值：設定 <code>DATABASE_URL</code> 並跑 <code>db/schema.sql</code>。</p>{/if}
+		{#if !data.source.database}<p>讀不到資料庫，個人資料用預設值：看伺服器 log 的 <code>[site]</code> 錯誤。</p>{/if}
 	</aside>
 {/if}
 
