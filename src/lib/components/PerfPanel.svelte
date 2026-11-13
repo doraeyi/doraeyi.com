@@ -2,9 +2,9 @@
 	// ?debug=perf 才會出現的量測面板：在使用者自己的電腦上看真實數字
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { sceneInfo } from '#lib/scene/stats.svelte.js';
+	import { sceneInfo } from '#lib/room/stats.svelte.js';
 
-	const MODE_LABEL = { pending: '載入中', worker: 'WebGL（Worker）', main: 'WebGL（主執行緒）', lite: 'CSS 球' } as const;
+	const MODE_LABEL = { pending: '載入中', worker: 'WebGL（Worker）', main: 'WebGL（主執行緒）', list: '清單（沒有 3D）' } as const;
 
 	let pageFps = $state(0);
 	let pageWorst = $state(0);
@@ -66,6 +66,7 @@
 			`解析度倍率：${sceneInfo.dpr}`,
 			`頁面 FPS：${pageFps}（最慢 ${pageWorst}ms）`,
 			s ? `3D FPS：${s.fps}／迴圈 ${s.loopFps}（最慢 ${s.worstMs}ms）` : '3D FPS：—',
+			s ? `畫質：tier ${s.tier}・draw call ${s.drawCalls}・三角形 ${s.triangles}` : '畫質：—',
 			`主執行緒卡住：${longTasks} 次，共 ${longTaskMs}ms`,
 			`3D 首幀：${sceneInfo.readyMs ? sceneInfo.readyMs + 'ms' : '—'}`,
 			`視窗：${innerWidth}×${innerHeight} @${devicePixelRatio}x`,
@@ -93,6 +94,8 @@
 		<dd class={sceneInfo.stats ? tone(sceneInfo.stats.loopFps) : ''}>
 			{#if sceneInfo.stats}{sceneInfo.stats.fps} FPS<small>迴圈 {sceneInfo.stats.loopFps}・最慢 {sceneInfo.stats.worstMs}ms</small>{:else}—{/if}
 		</dd>
+		<dt>畫質</dt>
+		<dd>{#if sceneInfo.stats}tier {sceneInfo.stats.tier}<small>{sceneInfo.stats.drawCalls} draw call・{sceneInfo.stats.triangles} 三角形</small>{:else}—{/if}</dd>
 		<dt>卡住</dt>
 		<dd class={longTasks ? 'warn' : 'good'}>{longTasks} 次<small>共 {longTaskMs}ms</small></dd>
 		<dt>GPU</dt>
@@ -102,7 +105,7 @@
 		切換：
 		<a href={link('worker')} data-sveltekit-reload>Worker</a>
 		<a href={link('main')} data-sveltekit-reload>主執行緒</a>
-		<a href={link('lite')} data-sveltekit-reload>CSS</a>
+		<a href={link('list')} data-sveltekit-reload>清單</a>
 	</nav>
 </aside>
 

@@ -2,7 +2,8 @@
 
 import type { SceneStats } from './protocol.js';
 
-export type SceneMode = 'pending' | 'worker' | 'main' | 'lite';
+/** list：沒有 WebGL 或真的跑不動時，改用一般清單顯示 */
+export type SceneMode = 'pending' | 'worker' | 'main' | 'list';
 
 export const sceneInfo = $state({
 	mode: 'pending' as SceneMode,
