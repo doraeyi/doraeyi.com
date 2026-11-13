@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { bake, box, buildKeeper, cone, cyl, m4, sphere, type KeeperRig, type Part } from './keepers.js';
 import type { Focus, FromScene, SceneOptions, SceneStats, Tier } from './protocol.js';
-import { blobTexture, nameTexture, screenTexture, shotTexture, signTexture, toonRamp, windowTexture, zTexture } from './textures.js';
+import { blobTexture, carpetLabelTexture, nameTexture, screenTexture, shotTexture, signTexture, toonRamp, windowTexture, zTexture } from './textures.js';
 import type { Desk, Room, World } from './world.js';
 
 const CELL_X = 2.7;
@@ -403,6 +403,21 @@ export function createRoom(
 		});
 		scene.add(bars);
 		addHit('github', carpet.x, 0.3, carpet.z, carpet.w, 0.8, carpet.d);
+
+		// 右上角立一塊說明牌，不然看不出這片柱子是什麼
+		const label = new THREE.Group();
+		label.position.set(carpet.x + carpet.w / 2 - 1.75, 0, carpet.z - carpet.d / 2 - 0.3);
+		label.add(mesh(bake([[cyl(0.04, 0.04, 0.6, 8), '#8b7bff', m4(-1.1, 0.3, -0.03)], [cyl(0.04, 0.04, 0.6, 8), '#8b7bff', m4(1.1, 0.3, -0.03)]])));
+		const plate = new THREE.Mesh(
+			keep(new THREE.PlaneGeometry(3.3, 1.03)),
+			keep(new THREE.MeshBasicMaterial({ map: keep(carpetLabelTexture(world.commits.reduce((n, c) => n + c, 0))), transparent: true }))
+		);
+		plate.position.set(0, 0.85, 0);
+		plate.rotation.x = -0.2;
+		label.add(plate);
+		scene.add(label);
+		pops.push([label, 0.9]);
+		sinkers.push([label, 0.15]);
 	}
 	const barMatrix = new THREE.Matrix4();
 	/** mult：變成 QR code 時柱子縮回地毯 */

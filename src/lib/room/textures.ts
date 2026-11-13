@@ -232,3 +232,35 @@ export function shotTexture(d: Desk, img: ImageBitmap) {
 	}
 	return texture(c);
 }
+
+/** 提交地毯角落的說明牌 */
+export function carpetLabelTexture(total: number) {
+	const W = 512,
+		H = 160;
+	const { c, ctx } = canvas2d(W, H);
+	ctx.fillStyle = '#f7f5fc';
+	ctx.beginPath();
+	ctx.roundRect(4, 4, W - 8, H - 8, 26);
+	ctx.fill();
+	ctx.lineWidth = 6;
+	ctx.strokeStyle = '#8b7bff';
+	ctx.stroke();
+
+	// GitHub 的貓頭鷹太複雜，用一個小方格圖示代表「提交格子」
+	const colors = ['#ddd6ee', '#b9acf3', '#9584f5', '#7059e6', '#4cc9f0'];
+	for (let r = 0; r < 3; r++)
+		for (let k = 0; k < 3; k++) {
+			ctx.fillStyle = colors[(r * 2 + k) % colors.length];
+			ctx.fillRect(32 + k * 22, 38 + r * 22, 18, 18);
+		}
+
+	ctx.textBaseline = 'alphabetic';
+	ctx.fillStyle = '#2a2442';
+	fit(ctx, 'GitHub 提交紀錄', W - 150, 900, 44);
+	ctx.fillText('GitHub 提交紀錄', 118, 76);
+	ctx.fillStyle = '#6b5fa8';
+	const sub = `過去一年 ${total} 次・一天一根・右邊是今天`;
+	fit(ctx, sub, W - 150, 600, 24);
+	ctx.fillText(sub, 120, 118);
+	return texture(c);
+}
