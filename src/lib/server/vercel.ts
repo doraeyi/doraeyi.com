@@ -1,5 +1,8 @@
 import { VC_TEAM_ID, VC_TOKEN } from '$app/env/private';
-import type { ActivityDay, Project } from '#lib/types.js';
+import type { Project } from '#lib/types.js';
+
+/** 從各來源抓回來、還沒加上主機、管理員、健康狀態的專案 */
+export type BaseProject = Omit<Project, 'key' | 'host' | 'keeper' | 'health' | 'asleep' | 'shot'>;
 
 const API = 'https://api.vercel.com';
 
@@ -16,13 +19,6 @@ interface VercelProject {
 	latestDeployments?: { alias?: string[]; url?: string; readyState?: string; createdAt?: number; target?: string | null }[];
 }
 
-interface VercelDeployment {
-	uid: string;
-	name: string;
-	created: number;
-	state?: string;
-	readyState?: string;
-}
 
 export const hasVercel = () => Boolean(VC_TOKEN);
 
@@ -55,7 +51,7 @@ function pickRepo(p: VercelProject): string | null {
 	return null;
 }
 
-export async function fetchVercelProjects(): Promise<Project[]> {
+export async function fetchVercelProjects(): Promise<BaseProject[]> {
 	const all: VercelProject[] = [];
 	let until: number | undefined;
 	do {
@@ -87,27 +83,4 @@ export async function fetchVercelProjects(): Promise<Project[]> {
 				state: (prod.readyState as Project['state']) ?? 'UNKNOWN'
 			};
 		});
-}
-
-/** 過去一年的正式部署次數（像 GitHub 的貢獻格子） */
-export async function fetchDeployActivity(): Promise<ActivityDay[]> {
-	const since = Date.now() - 365 * 864e5;
-	const counts = new Map<string, number>();
-	let until: number | undefined;
-
-	// 最多翻 20 頁 = 2000 次部署，避免帳號很大時拖太久
-	for (let i = 0; i < 20; i++) {
-		const page = await call<{ deployments: VercelDeployment[]; pagination?: { next: number | null } }>(
-			'/v6/deployments',
-			{ limit: 100, since, ...(until ? { until } : {}) }
-		);
-		for (const d of page.deployments) {
-			const day = new Date(d.created).toISOString().slice(0, 10);
-			counts.set(day, (counts.get(day) ?? 0) + 1);
-		}
-		until = page.pagination?.next ?? undefined;
-		if (!until || until < since) break;
-	}
-
-	return [...counts].map(([date, count]) => ({ date, count }));
 }

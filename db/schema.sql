@@ -33,3 +33,36 @@ CREATE TABLE IF NOT EXISTS project_meta (
   sort_order   INTEGER NOT NULL DEFAULT 0,  -- 越小越前面
   updated_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 放在同事 VM 上跑的專案（Vercel 抓不到，所以手動登記）
+-- 新增一列，網站上 VM 房間就會多一張桌子跟一位管理員
+CREATE TABLE IF NOT EXISTS vm_project (
+  slug         TEXT PRIMARY KEY,            -- 英數代號，例如 blog
+  title        TEXT NOT NULL,
+  description  TEXT NOT NULL DEFAULT '',
+  url          TEXT NOT NULL,               -- 健康檢查會打這個網址
+  repo         TEXT,
+  tags         TEXT,                        -- JSON：["Astro", "部落格"]
+  hidden       INTEGER NOT NULL DEFAULT 0,
+  sort_order   INTEGER NOT NULL DEFAULT 0,
+  updated_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 健康檢查結果：管理員每 12 小時去看一次專案，掛了就會睡著
+-- key 是 "vercel:<專案名>" 或 "vm:<slug>"
+CREATE TABLE IF NOT EXISTS health (
+  project_key  TEXT PRIMARY KEY,
+  ok           INTEGER NOT NULL,            -- 1 = 正常
+  status       INTEGER,                     -- HTTP 狀態碼；連不上是 NULL
+  ms           INTEGER,                     -- 回應時間
+  note         TEXT,                        -- 失敗原因
+  checked_at   INTEGER NOT NULL,            -- 毫秒時間戳
+  checks       INTEGER NOT NULL DEFAULT 0,  -- 累計檢查次數
+  fails        INTEGER NOT NULL DEFAULT 0   -- 累計失敗次數，用來算妥善率
+);
+
+-- 各專案首頁的截圖（巡房時順便拍，檔案放在資料庫旁邊的 shots/ 資料夾）
+CREATE TABLE IF NOT EXISTS screenshot (
+  project_key  TEXT PRIMARY KEY,
+  taken_at     INTEGER NOT NULL            -- 毫秒時間戳，也拿來當網址版本號
+);
