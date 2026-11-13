@@ -71,7 +71,7 @@ export function createRoom(
 	emit: (msg: FromScene) => void
 ) {
 	let { width, height, dpr, tier } = options;
-	const { reduced } = options;
+	const { reduced, fullRes = false } = options;
 
 	const renderer = new THREE.WebGLRenderer({
 		canvas: canvas as HTMLCanvasElement,
@@ -539,7 +539,8 @@ export function createRoom(
 			// 深色格子升起、變色；淺色格子只提亮，不升高
 			const k = smooth(clamp((qq - 0.3 - tl.delay) / 0.4, 0, 1));
 			const h = tl.dark ? tl.h0 + (QR_H - tl.h0) * k : tl.h0;
-			const w = C * (tl.dark ? 1 : 0.94);
+			// 淺色地磚平常留一點縫像拼花，變成 QR 時把縫合起來，掃描器比較好讀
+			const w = C * (tl.dark ? 1 : 0.94 + 0.06 * k);
 			tileMatrix.makeScale(w, h, w).setPosition(tl.x, h / 2, tl.z);
 			tileMesh.setMatrixAt(i, tileMatrix);
 			tileMesh.setColorAt(i, tileColor.copy(tl.c0).lerp(tl.c1, k));
@@ -699,7 +700,7 @@ export function createRoom(
 
 	// ---- 畫質 ----
 	function applyTier() {
-		renderer.setPixelRatio(Math.min(dpr, tier === 2 ? 1.75 : 1.25));
+		renderer.setPixelRatio(Math.min(dpr, fullRes ? 3 : tier === 2 ? 1.75 : 1.25));
 		renderer.setSize(width, height, false);
 		const shadows = tier === 2;
 		if (renderer.shadowMap.enabled !== shadows) {

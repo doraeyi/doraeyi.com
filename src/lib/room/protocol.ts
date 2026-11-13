@@ -14,6 +14,8 @@ export interface SceneOptions {
 	dpr: number;
 	reduced: boolean;
 	tier: Tier;
+	/** 錄影模式（網址加 ?capture）：解析度不設上限 */
+	fullRes?: boolean;
 }
 
 export type ToScene =

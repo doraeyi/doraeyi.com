@@ -72,7 +72,9 @@
 		onmode(choice.mode);
 		if (choice.mode === 'list' || !canvas) return;
 
-		let tier = startTier();
+		// 錄影模式（網址加 ?capture）：一律最高畫質、不自動降級，錄 Reels 用
+		const capture = new URLSearchParams(location.search).has('capture');
+		let tier: Tier = capture ? 2 : startTier();
 		let teardown = () => {};
 		let slow = 0;
 		let verySlow = 0;
@@ -93,7 +95,7 @@
 				sceneInfo.readyMs = Math.round(performance.now() - started);
 				send({ type: 'focus', focus, panel });
 				// 軟體繪圖（沒有真的 GPU）先降到低畫質，還是不行再交給下面的降級
-				if (/swiftshader|llvmpipe|software/i.test(msg.gpu) && tier === 2) {
+				if (/swiftshader|llvmpipe|software/i.test(msg.gpu) && tier === 2 && !capture) {
 					tier = 1;
 					send({ type: 'tier', tier });
 				}
@@ -103,6 +105,7 @@
 				// 高畫質連續 3 秒不到 40 幀 → 關陰影；低畫質連續 5 秒不到 20 幀 → 改清單
 				slow = msg.stats.loopFps < 40 ? slow + 1 : 0;
 				verySlow = msg.stats.loopFps < 20 ? verySlow + 1 : 0;
+				if (capture) return;
 				if (tier === 2 && slow >= 3) {
 					tier = 1;
 					slow = 0;
@@ -126,6 +129,7 @@
 			height: innerHeight,
 			dpr: devicePixelRatio,
 			reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+			fullRes: capture,
 			tier
 		});
 		// $state 物件是 Proxy，postMessage 複製不了，先轉成普通物件
