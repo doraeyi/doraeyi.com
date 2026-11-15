@@ -54,16 +54,27 @@
 		return () => clearTimeout(t);
 	});
 
+	/** 資訊卡打開前焦點在哪（例如下方的按鈕），關掉時放回去，鍵盤使用者不用從頭 Tab */
+	let returnTo: HTMLElement | null = null;
+
+	function remember() {
+		const el = document.activeElement;
+		if (el instanceof HTMLElement && el !== document.body && !el.closest('.panel')) returnTo = el;
+	}
+
 	function open(v: Focus | 'about') {
 		hint = false;
 		qr = false;
 		if (view === v && panel) return close();
+		remember();
 		view = v;
 		panel = true;
 	}
 
 	function close() {
 		panel = false;
+		if (returnTo?.isConnected) returnTo.focus({ preventScroll: true });
+		returnTo = null;
 		// 手機上關掉卡片後留在原本的房間，桌面版回到全景
 		if (!portrait()) view = 'all';
 		else if (selected) view = selected.host;
@@ -84,7 +95,10 @@
 		view = key;
 		// 'all'：滾輪拉遠到全景，資訊卡收起來
 		if (key === 'all') panel = false;
-		else if (data.projects.some((p) => p.key === key)) panel = true;
+		else if (data.projects.some((p) => p.key === key)) {
+			remember();
+			panel = true;
+		}
 	}
 
 	const nextPatrol = $derived(data.nextCheckAt <= Date.now() ? '巡房中' : timeAgo(data.nextCheckAt));
@@ -150,7 +164,8 @@
 <!-- 資訊卡：桌面版在右邊，手機版從下面滑上來 -->
 {#if panel && view !== 'all'}
 	{#key view}
-		<aside class="panel" aria-live="polite">
+		<!-- 打開或換內容時焦點移進卡片，螢幕閱讀器跟鍵盤都從卡片開頭接著走 -->
+		<aside class="panel" aria-live="polite" tabindex="-1" {@attach (el) => el.focus({ preventScroll: true })}>
 			<button class="close" onclick={close} aria-label="關閉">✕</button>
 
 			{#if selected}
@@ -395,6 +410,9 @@
 		box-shadow: 0 30px 80px -20px rgb(0 0 0 / 0.6);
 		animation: panelIn 0.45s var(--ease) both;
 		overscroll-behavior: contain;
+	}
+	.panel:focus-visible {
+		outline: none;
 	}
 	@keyframes panelIn {
 		from {
