@@ -80,7 +80,7 @@ export function createRoom(
 		powerPreference: 'high-performance'
 	});
 	renderer.setClearColor(0x000000, 0);
-	renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+	renderer.shadowMap.type = THREE.PCFShadowMap; // r186 拿掉了 PCFSoftShadowMap，用了也會自動換成這個，還多一行警告
 
 	const scene = new THREE.Scene();
 	const camera = new THREE.PerspectiveCamera(30, 1, 0.5, 120);
@@ -461,6 +461,10 @@ export function createRoom(
 	);
 	blobs.forEach((b, i) => blobMesh.setMatrixAt(i, b));
 	scene.add(blobMesh);
+	// 出場時家具一件件彈出來，影子跟著慢慢浮現，不要桌子還沒出來地上就先有黑影
+	const blobMat = blobMesh.material as THREE.MeshBasicMaterial;
+	blobMat.opacity = reduced ? 1 : 0;
+	const lastPop = Math.max(...pops.map(([, delay]) => delay));
 
 	// ---- QR 地磚（ICQR 的做法） ----
 	// 整塊底板切成 QR 的格子。平常深色格子只是淡淡的拼花，院子裡空著的深色格子長成矮樹籬；
@@ -605,13 +609,16 @@ export function createRoom(
 		}
 		const dv = desks.find((d) => d.desk.key === focus);
 		if (dv) return { target: new THREE.Vector3(dv.x + 0.4, 0.85, dv.z + 0.1), dist: fitDist(1.4, 1.2), yaw: -0.25, pitch: 0.48 };
+		// 底板斜著看，左右實際佔的寬度比 S 大（轉了 yaw 再加上前緣離鏡頭比較近）；
+		// 橫的螢幕是高度先頂到所以看不出來，直式手機會被切掉左右兩邊
+		const spread = (yaw: number) => (Math.cos(yaw) + Math.abs(Math.sin(yaw))) * (portrait() ? 1.08 : 1);
 		if (focus === 'top') {
-			return { target: new THREE.Vector3(0, 0.9, back + dMax / 2 + 0.3), dist: fitDist(S / 2 + 0.3, dMax / 2 + 0.8), yaw: -0.1, pitch: 0.6 };
+			return { target: new THREE.Vector3(0, 0.9, back + dMax / 2 + 0.3), dist: fitDist((S / 2 + 0.3) * spread(-0.1), dMax / 2 + 0.8), yaw: -0.1, pitch: 0.6 };
 		}
 
 		return {
 			target: new THREE.Vector3(0, 0.4, 0),
-			dist: fitDist(S / 2 + 0.3, S / 2 + 0.6),
+			dist: fitDist((S / 2 + 0.3) * spread(-0.14), S / 2 + 0.6),
 			yaw: -0.14,
 			pitch: 0.62
 		};
@@ -654,7 +661,17 @@ export function createRoom(
 	const user = { yaw: 0, pitch: 0, zoom: 1 };
 	const shift = { x: 0, y: 0 };
 	// QR 模式把畫面往上推一點，下面留給說明卡
-	const shiftGoal = () => (qrOn ? { x: 0, y: (QR_BOTTOM - QR_TOP) / 2 } : !panel ? { x: 0, y: 0 } : portrait() ? { x: 0, y: height * 0.24 } : { x: panelW() / 2, y: 0 });
+	// 直式手機看房間：房間在後排、上面只有夜空，把房間往上挪一點，下面多露出一些地毯
+	const shiftGoal = () =>
+		qrOn
+			? { x: 0, y: (QR_BOTTOM - QR_TOP) / 2 }
+			: panel
+				? portrait()
+					? { x: 0, y: height * 0.24 }
+					: { x: panelW() / 2, y: 0 }
+				: portrait() && (focus === 'vercel' || focus === 'vm') && u < 0.5
+					? { x: 0, y: height * 0.1 }
+					: { x: 0, y: 0 };
 	let lastInput = -10;
 
 	// 變成 QR 時鏡頭轉到底板正上方，同時把視角收窄、拉遠（推拉變焦），
@@ -769,6 +786,7 @@ export function createRoom(
 				obj.scale.setScalar(Math.max(0.0001, s));
 				if (k < 1) all = false;
 			}
+			blobMat.opacity = clamp((t - lastPop) / 0.75, 0, 1);
 			setBars(t);
 			if (all && t > 1.0 + weeks * 0.018 + 0.8) finishIntro();
 		}
@@ -861,6 +879,7 @@ export function createRoom(
 	/** 出場動畫直接跳到最後：動畫還沒播完就按了 QR 時用 */
 	function finishIntro() {
 		for (const [obj] of pops) obj.scale.setScalar(1);
+		blobMat.opacity = 1;
 		setBars(99);
 		introDone = true;
 	}

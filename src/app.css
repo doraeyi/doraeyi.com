@@ -14,7 +14,7 @@
 	/* 中英文用同一套字：Manrope 配思源黑體，標題粗細一致才不會像兩種風格拼起來 */
 	--font-display: 'Manrope', 'Noto Sans TC', system-ui, sans-serif;
 	--font-body: 'Manrope', 'Noto Sans TC', system-ui, sans-serif;
-	--font-mono: 'JetBrains Mono', ui-monospace, monospace;
+	--font-mono: 'JetBrains Mono', ui-monospace, 'Noto Sans TC', monospace; /* 中文（次、天）跟著用黑體，不要掉到系統的明體 */
 	--pad: clamp(16px, 5vw, 72px);
 
 	/* 圓角只有三種：小元件、方塊、卡片；按鈕跟標籤一律膠囊形 */

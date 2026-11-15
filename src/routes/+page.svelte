@@ -20,7 +20,10 @@
 	const byHost = (h: Host) => data.projects.filter((p) => p.host === h);
 	const asleep = $derived(data.projects.filter((p) => p.asleep).length);
 	const awake = $derived(data.projects.length - asleep);
-	const domains = $derived([...new Set(data.projects.map((p) => domainOf(p.url)).filter(Boolean))] as string[]);
+	// 「我的網域」不放 Vercel 自動產生的團隊網址（xxx-liams-projects-045ae9db.vercel.app），那不是取的名字
+	const domains = $derived(
+		[...new Set(data.projects.map((p) => domainOf(p.url)).filter(Boolean))].filter((d) => !/-projects(-[a-z0-9]+)?\.vercel\.app$/.test(d!)) as string[]
+	);
 
 	const EMOJI: Record<Keeper, string> = { robot: '🤖', cat: '🐱', dog: '🐶' };
 	const ROOMS: Record<Host, { name: string; blurb: string }> = {
@@ -149,8 +152,8 @@
 <!-- 下方：切換停靠點 -->
 <nav class="dock" aria-label="切換視角">
 	<button class:on={view === 'all' && !qr} onclick={() => ((view = 'all'), (panel = false), (qr = false))}>全景</button>
-	<button class:on={view === 'vercel' && !qr} onclick={() => open('vercel')}>▲ Vercel <small>{byHost('vercel').length}</small></button>
-	<button class:on={view === 'vm' && !qr} onclick={() => open('vm')}>▤ VM <small>{byHost('vm').length}</small></button>
+	<button class:on={view === 'vercel' && !qr} onclick={() => open('vercel')}><i aria-hidden="true">▲ </i>Vercel <small>{byHost('vercel').length}</small></button>
+	<button class:on={view === 'vm' && !qr} onclick={() => open('vm')}><i aria-hidden="true">▤ </i>VM <small>{byHost('vm').length}</small></button>
 	{#if data.github}<button class:on={view === 'github' && !qr} onclick={() => open('github')}>GitHub</button>{/if}
 	<button class:on={view === 'about' && !qr} onclick={() => open('about')}>關於我</button>
 	<button class:on={qr} onclick={() => ((qr = !qr), (panel = false))} aria-pressed={qr}>QR</button>
@@ -568,6 +571,10 @@
 		opacity: 0.6;
 		font-weight: 500;
 	}
+	.dock i {
+		margin-right: 5px;
+		font-style: normal;
+	}
 
 	/* ---------- 資訊卡 ---------- */
 	.panel {
@@ -891,6 +898,24 @@
 		.hint {
 			bottom: 84px;
 			font-size: 12px;
+		}
+		/* 六顆按鈕要一次放得下，最右邊的 QR 不能被擠到要滑才看得到 */
+		.dock {
+			left: 16px;
+			right: 16px;
+			translate: none;
+			max-width: none;
+			gap: 0;
+			padding: 4px;
+		}
+		.dock button {
+			flex: 1 1 auto;
+			padding: 9px 6px;
+			font-size: 13px;
+		}
+		.dock i,
+		.dock small {
+			display: none;
 		}
 	}
 </style>
