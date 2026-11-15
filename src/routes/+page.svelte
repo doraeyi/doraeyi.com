@@ -536,6 +536,44 @@
 		clip-path: inset(50%);
 		white-space: nowrap;
 	}
+	/* 有 3D 時清單藏起來給螢幕閱讀器用；用 Tab 走進來就浮出來，鍵盤也能選桌子 */
+	main.sr-only:focus-within {
+		position: fixed;
+		top: 84px;
+		left: var(--pad);
+		z-index: 25;
+		width: min(360px, calc(100vw - 32px));
+		height: auto;
+		max-height: calc(100dvh - 190px);
+		overflow-y: auto;
+		padding: 20px;
+		border: 1px solid var(--line);
+		border-radius: var(--r-lg);
+		background: rgb(16 16 26 / 0.92);
+		backdrop-filter: blur(16px);
+		clip-path: none;
+		white-space: normal;
+		overscroll-behavior: contain;
+	}
+	main.sr-only:focus-within h1,
+	main.sr-only:focus-within > p {
+		display: none;
+	}
+	main.sr-only:focus-within section + section {
+		margin-top: 20px;
+	}
+	main.sr-only:focus-within h2 {
+		margin: 0;
+		font-size: 15px;
+	}
+	main.sr-only:focus-within section p {
+		margin: 4px 0 0;
+		color: var(--muted);
+		font-size: 13px;
+	}
+	main.sr-only:focus-within ul {
+		margin-top: 10px;
+	}
 
 	.dev-note {
 		position: fixed;
