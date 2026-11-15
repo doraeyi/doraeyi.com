@@ -797,7 +797,7 @@ export function createRoom(
 			if (!qrOn && pull >= 1) toggleQr(true);
 			else if (qrOn && pull <= -1) toggleQr(false);
 			const qGoal = qrOn ? 1 - Math.max(0, -pull) * 0.2 : Math.max(0, pull) * 0.2;
-			q = Math.abs(q - qGoal) < 0.0005 ? qGoal : damp(q, qGoal, 2.2, dt);
+			q = Math.abs(q - qGoal) < 0.0005 ? qGoal : damp(q, qGoal, reduced ? 9 : 2.2, dt);
 			if (Math.abs(pull - sentPull) > 0.04 || (pull === 0) !== (sentPull === 0)) {
 				sentPull = Math.abs(pull) < 0.02 ? 0 : pull;
 				pull = sentPull === 0 ? 0 : pull;
@@ -806,8 +806,8 @@ export function createRoom(
 			applyQr();
 		}
 
-		// 鏡頭慢慢滑向目標
-		const k = 2.6;
+		// 鏡頭慢慢滑向目標；系統設定減少動態時改成很快就到，不要大幅度地飛過去
+		const k = reduced ? 12 : 2.6;
 		cam.target.x = damp(cam.target.x, goal.target.x, k, dt);
 		cam.target.y = damp(cam.target.y, goal.target.y, k, dt);
 		cam.target.z = damp(cam.target.z, goal.target.z, k, dt);
