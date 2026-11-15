@@ -30,8 +30,35 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+  # 房間變身成 QR 之後真的拍一張、用 jsQR 解：白天／晚上 × 桌面／手機，任何一種掃不出來就不部署
+  qr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium
+
+      - name: QR scan test
+        run: pnpm test:qr
+
+      # 失敗時把當下的畫面留下來，在 Actions 頁面下載看
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: qr-screens
+          path: test-results/
+          retention-days: 7
+
   build-and-push:
-    needs: check
+    needs: [check, qr]
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -65,7 +65,8 @@ export function taipeiNight(now = new Date()) {
 	return hour >= 18 || hour < 6;
 }
 
-export function buildWorld(data: SiteData): World {
+/** night 沒給就照台北時間；測試會用 ?night=0/1 固定白天或晚上 */
+export function buildWorld(data: SiteData, night = taipeiNight()): World {
 	const desks = (host: Host): Desk[] =>
 		data.projects
 			.filter((p) => p.host === host)
@@ -88,7 +89,7 @@ export function buildWorld(data: SiteData): World {
 			{ host: 'vm', label: 'VM', sub: '同事的機房', desks: desks('vm') }
 		],
 		commits: data.github?.days.map((d) => d.count) ?? [],
-		night: taipeiNight(),
+		night,
 		qr: data.qr
 	};
 }

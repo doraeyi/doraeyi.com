@@ -25,11 +25,12 @@ doraeyi.com 是我的個人網站，整個首頁是一個可以拖曳旋轉的 3
 - 🏠 **兩間 3D 房間**：Vercel 房的清單直接從 Vercel API 抓；VM 機房的專案登記在 SQLite 的 `vm_project` 表
 - 😴 **巡房管理員**：每 12 小時健康檢查一次，結果與妥善率存在 SQLite，掛掉的專案管理員會睡著
 - 🟪 **GitHub 提交地毯**：過去一年每天的提交數，一天一根柱子（不需要 token）
-- 🔳 **整個場景藏著一個 QR code**（ICQR 的做法）：兩間房間、走廊、院子放在同一塊正方形底板上，底板的地磚就是 QR 的格子，平常看是淡淡的拼花地板跟院子裡的樹籬。滾輪滾到最遠或按著往下拉，牆往外倒、家具跟管理員融進地板、深色格子升起變深，鏡頭轉到正上方並收窄視角把透視壓平，整塊底板就是 GitHub 個人頁的 QR code；往上推全部倒帶回來（QR 矩陣在伺服器用 `qrcode` 算好）
+- 🔳 **整個場景藏著一個 QR code**（ICQR 的做法）：兩間房間、走廊、院子放在同一塊正方形底板上，底板的地磚就是 QR 的格子，平常看是淡淡的拼花地板跟院子裡的樹籬。滾輪滾到最遠或按著往下拉，牆往外倒、家具跟管理員融進地板、深色格子升起變深，鏡頭轉到正上方並收窄視角把透視壓平，整塊底板就是 GitHub 個人頁的 QR code；往上推全部倒帶回來（QR 矩陣在伺服器用 `qrcode` 算好）。手機掃不到自己的螢幕，所以 QR 卡片有「存圖」（`/qr.png`）跟「分享」（系統分享面板）
 - 🖥️ **螢幕顯示專案首頁**：巡房後幫正常的專案拍首頁截圖（WordPress mshots，免費、不用帳號），一天更新一次，存在資料庫旁的 `shots/` 資料夾，貼到桌上的螢幕跟資訊卡；掛掉的專案螢幕會變成紅色 DOWN
 - 🗂️ **點桌子看詳情**：網域、上次巡房、回應時間、HTTP 狀態、妥善率、技術、原始碼連結
 - 🌙 **跟著台灣時間變化**：晚上窗外變星空、房間點起暖燈
 - 📱 **手機也是 3D**：自動降畫質；真的跑不動才改成一般清單
+- 🔗 **分享預覽圖**：貼到 LINE、IG、Facebook 會出現 `static/og.jpg`（1200×630，場景截圖加一句介紹）
 - 🧪 **沒設定也能跑**：缺 Vercel token 時 Vercel 房用示範資料
 
 ## 🏗️ 系統架構
@@ -103,6 +104,16 @@ cp .env.example .env   # 不填也能跑，會用示範資料
 pnpm dev
 ```
 
+網址參數：`?capture` 錄影用（最高畫質、不自動降級）、`?night=1`／`?night=0` 固定晚上或白天、`?scene=list` 直接看清單版、`?debug=perf` 顯示效能面板。
+
+### QR 掃描測試
+
+```bash
+pnpm test:qr
+```
+
+會先 build、開一台正式版伺服器，再用 Playwright 開網站按「QR」，拍畫面交給 jsQR 解，白天／晚上 × 桌面／手機四種都要解出 `https://github.com/doraeyi`。改了地磚顏色、燈光或鏡頭之後跑一次。本機借用系統裝的 Chrome，CI 用 Playwright 下載的 Chromium（沒有 GPU，用軟體算圖）。
+
 ## ⚙️ 環境變數
 
 | 變數 | 說明 |
@@ -146,6 +157,7 @@ VALUES ('punch', '打卡系統', '……', 'https://punch.doraeyi.com', json_arr
 跟 blog 同一套：推到 `main` 會觸發 `.github/workflows/deploy.yml`。
 
 1. **check**：`pnpm check`（型別檢查）＋ `pnpm lint`（ESLint），失敗就停，線上繼續跑上一版
+   **qr**（同時跑）：`pnpm test:qr`，QR 掃不出來也不部署；失敗的畫面會存成 `qr-screens` artifact
 2. **build-and-push**：build Docker image，推到 `ghcr.io/doraeyi/doraeyi-site`（`latest` 跟 commit SHA 兩個 tag）
 3. **deploy**：在 VM 的 self-hosted runner 上，把 `docker-compose.yml` 同步到 `~/doraeyi-site/`，然後 `docker compose pull && up -d`
 

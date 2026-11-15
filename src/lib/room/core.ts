@@ -770,10 +770,7 @@ export function createRoom(
 				if (k < 1) all = false;
 			}
 			setBars(t);
-			if (all && t > 1.0 + weeks * 0.018 + 0.8) {
-				introDone = true;
-				setBars(99);
-			}
+			if (all && t > 1.0 + weeks * 0.018 + 0.8) finishIntro();
 		}
 
 		// 往下拉：拉的量會慢慢彈回去，拉夠了才變身；拉的過程鏡頭先往上轉一點當提示
@@ -859,6 +856,13 @@ export function createRoom(
 		const gl = renderer.getContext();
 		const ext = gl.getExtension('WEBGL_debug_renderer_info');
 		return String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+	}
+
+	/** 出場動畫直接跳到最後：動畫還沒播完就按了 QR 時用 */
+	function finishIntro() {
+		for (const [obj] of pops) obj.scale.setScalar(1);
+		setBars(99);
+		introDone = true;
 	}
 
 	function toggleQr(on: boolean) {
@@ -998,7 +1002,10 @@ export function createRoom(
 			user.zoom = 1;
 		},
 		setQr(on: boolean) {
-			if (introDone && on !== qrOn) toggleQr(on);
+			if (on === qrOn) return;
+			// 出場動畫還在播就按了 QR：直接播完再變身，不要把這次點擊吃掉
+			if (!introDone) finishIntro();
+			toggleQr(on);
 		},
 		setTier(next: Tier) {
 			tier = next;

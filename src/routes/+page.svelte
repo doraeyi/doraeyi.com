@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { dev } from '$app/env';
 	import { page } from '$app/state';
+	import { onMount } from 'svelte';
 	import Stage from '#lib/components/Stage.svelte';
 	import PerfPanel from '#lib/components/PerfPanel.svelte';
 	import { frameworkLabel, timeAgo } from '#lib/format.js';
@@ -13,7 +14,9 @@
 	let { data }: PageProps = $props();
 
 	const profile = $derived(data.profile);
-	const world = $derived(buildWorld(data));
+	/** ?night=1 / ?night=0 固定晚上或白天，QR 掃描測試兩種光線都要測 */
+	const nightParam = $derived(page.url.searchParams.get('night'));
+	const world = $derived(buildWorld(data, nightParam === null ? undefined : nightParam === '1'));
 	const byHost = (h: Host) => data.projects.filter((p) => p.host === h);
 	const asleep = $derived(data.projects.filter((p) => p.asleep).length);
 	const awake = $derived(data.projects.length - asleep);
@@ -86,13 +89,33 @@
 		p.asleep ? { cls: 'down', text: '睡著了' } : p.health ? { cls: 'up', text: '醒著值班中' } : { cls: 'idle', text: '等第一次巡房' };
 
 	const nextPatrol = $derived(data.nextCheckAt <= Date.now() ? '巡房中' : timeAgo(data.nextCheckAt));
+
+	/** 分享預覽圖跟分享連結都用正式網址，不管是從哪個網域進來的 */
+	const SITE = 'https://doraeyi.com';
+
+	/** 手機的系統分享面板（LINE、IG 限動…），桌面瀏覽器多半沒有就不顯示按鈕 */
+	let canShare = $state(false);
+	onMount(() => {
+		canShare = typeof navigator.share === 'function';
+	});
+
+	function share() {
+		navigator.share({ title: `${profile.name} 的 GitHub`, url: data.qr.url }).catch(() => {});
+	}
 </script>
 
 <svelte:head>
 	<title>{profile.name} · {profile.role}</title>
 	<meta name="description" content="{profile.tagline} 兩間 3D 房間，每個上線中的專案都有一位管理員顧著。" />
+	<meta property="og:type" content="website" />
+	<meta property="og:url" content={SITE} />
 	<meta property="og:title" content="{profile.name} — 作品集" />
-	<meta property="og:description" content={profile.tagline} />
+	<meta property="og:description" content="{profile.tagline} 兩間 3D 房間，一直往下拉會變成我的 GitHub QR code。" />
+	<meta property="og:image" content="{SITE}/og.jpg" />
+	<meta property="og:image:width" content="1200" />
+	<meta property="og:image:height" content="630" />
+	<meta property="og:image:alt" content="兩間 3D 小房間，每張桌子前都有一隻顧專案的機器人、貓或狗" />
+	<meta name="twitter:card" content="summary_large_image" />
 </svelte:head>
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && panel && close()} />
@@ -135,7 +158,15 @@
 
 {#if qr}
 	<aside class="qr-card">
-		<p><b>掃一下，追蹤我的 GitHub</b><span>往上推或按「全景」回到房間</span></p>
+		<p>
+			<b class="far">掃一下，追蹤我的 GitHub</b>
+			<b class="near">在手機上？存下來或直接分享</b>
+			<span>往上推或按「全景」回到房間</span>
+		</p>
+		<a class="btn" href="/qr.png" download="doraeyi-github-qr.png">存圖</a>
+		{#if canShare}
+			<button class="btn" onclick={share}>分享</button>
+		{/if}
 		<a class="btn primary" href={data.qr.url} target="_blank" rel="noreferrer">開啟 ↗</a>
 	</aside>
 {/if}
@@ -459,6 +490,37 @@
 		margin: 0;
 		font-size: 14px;
 	}
+	/* 滑鼠用戶拿手機掃；觸控用戶本來就在手機上，改成存圖／分享的說法 */
+	.qr-card .near {
+		display: none;
+	}
+	@media (pointer: coarse) {
+		.qr-card .far {
+			display: none;
+		}
+		.qr-card .near {
+			display: block;
+		}
+	}
+	/* 直式手機：說明一行、三顆按鈕平分下一行 */
+	@media (max-width: 600px) {
+		.qr-card {
+			flex-wrap: wrap;
+			gap: 10px;
+			width: calc(100vw - 32px);
+			padding: 14px;
+			border-radius: var(--r-md);
+			white-space: normal;
+		}
+		.qr-card p {
+			flex-basis: 100%;
+			padding-left: 4px;
+		}
+		.qr-card .btn {
+			flex: 1;
+			text-align: center;
+		}
+	}
 	.qr-card span {
 		color: var(--muted);
 		font-size: 12px;
@@ -675,6 +737,11 @@
 		font-weight: 600;
 		text-decoration: none;
 		transition: background 0.25s var(--ease);
+	}
+	button.btn {
+		background: none;
+		font-family: inherit;
+		cursor: pointer;
 	}
 	.btn:hover {
 		background: rgb(255 255 255 / 0.06);
