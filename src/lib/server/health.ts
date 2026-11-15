@@ -14,7 +14,7 @@ export interface Target {
 	brokenReason?: string;
 }
 
-async function probe(url: string): Promise<Omit<Health, 'uptime' | 'checkedAt'>> {
+export async function probe(url: string): Promise<Omit<Health, 'uptime' | 'checkedAt'>> {
 	const started = performance.now();
 	try {
 		const res = await fetch(url, {
