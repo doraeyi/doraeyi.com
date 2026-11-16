@@ -5,7 +5,10 @@ declare global {
 		// interface Error {}
 		// interface Locals {}
 		// interface PageData {}
-		// interface PageState {}
+		interface PageState {
+			/** 這筆歷史是打開資訊卡時推進去的，用 ✕ 關掉時退回去，不要一直疊 */
+			card?: boolean;
+		}
 		// interface Platform {}
 	}
 }

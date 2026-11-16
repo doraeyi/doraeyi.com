@@ -1,5 +1,8 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { dev } from '$app/env';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import Stage from '#lib/components/Stage.svelte';
 	import PerfPanel from '#lib/components/PerfPanel.svelte';
@@ -81,6 +84,51 @@
 		else if (view === 'about' || view === 'github') view = 'vercel';
 	}
 
+	/** 手機的底部抽屜：卡片捲在最上面時往下滑就關掉 */
+	function swipeToClose(el: HTMLElement) {
+		const sheet = matchMedia('(max-width: 720px)');
+		let y0 = 0;
+		let dy = 0;
+		let active = false;
+		const start = (e: TouchEvent) => {
+			active = sheet.matches && el.scrollTop <= 0 && e.touches.length === 1;
+			y0 = e.touches[0].clientY;
+			dy = 0;
+		};
+		const move = (e: TouchEvent) => {
+			if (!active) return;
+			dy = e.touches[0].clientY - y0;
+			// 往上滑是要捲內容，交給瀏覽器
+			if (dy < 0) {
+				active = false;
+				el.style.translate = '';
+				return;
+			}
+			e.preventDefault();
+			el.style.transition = 'none';
+			el.style.translate = `0 ${dy}px`;
+		};
+		const end = () => {
+			if (!active) return;
+			active = false;
+			el.style.transition = '';
+			if (dy > Math.min(120, el.offsetHeight * 0.25)) {
+				el.style.translate = '0 100%';
+				setTimeout(close, 180);
+			} else el.style.translate = '';
+		};
+		el.addEventListener('touchstart', start, { passive: true });
+		el.addEventListener('touchmove', move, { passive: false });
+		el.addEventListener('touchend', end);
+		el.addEventListener('touchcancel', end);
+		return () => {
+			el.removeEventListener('touchstart', start);
+			el.removeEventListener('touchmove', move);
+			el.removeEventListener('touchend', end);
+			el.removeEventListener('touchcancel', end);
+		};
+	}
+
 	function onqr(on: boolean, p: number) {
 		qr = on;
 		pull = p;
@@ -100,6 +148,52 @@
 			panel = true;
 		}
 	}
+
+	/** 睡著的專案；點上面的「睡著了」依序飛過去看 */
+	const sleepers = $derived(data.projects.filter((p) => p.asleep));
+	function visitSleeper() {
+		const i = sleepers.findIndex((p) => p.key === view);
+		qr = false;
+		select(sleepers[(i + 1) % sleepers.length].key);
+	}
+
+	// 網址的 ?at= 記著開著哪張卡片（例如 ?at=vercel:dinner-vote）：可以直接分享某個專案，
+	// 打開卡片會多一筆歷史，手機按返回鍵是先關卡片，不會直接離開網站
+	// 淺層導覽只會更新 page.shallow.url，page.url 一直是第一次載入的網址
+	const shownUrl = $derived(page.shallow?.url ?? page.url);
+	const atParam = $derived(shownUrl.searchParams.get('at'));
+	const openAt = $derived(panel && view !== 'all' ? view : null);
+	const validAt = (v: string | null): v is Focus | 'about' =>
+		v === 'vercel' || v === 'vm' || v === 'about' || (v === 'github' && !!data.github) || data.projects.some((p) => p.key === v);
+
+	// 網址 → 畫面：第一次進來、按返回鍵或下一頁。要放在下面那個前面，第一次進來才是網址說了算
+	$effect(() => {
+		const at = atParam;
+		untrack(() => {
+			if (at === openAt) return;
+			if (validAt(at)) {
+				hint = false;
+				qr = false;
+				view = at;
+				panel = true;
+			} else if (at === null && panel) close();
+		});
+	});
+
+	// 畫面 → 網址
+	$effect(() => {
+		const at = openAt;
+		untrack(() => {
+			if (at === atParam) return;
+			// 自己組，?capture 這種沒有值的參數才不會變成 capture=，key 裡的冒號也不用編碼
+			const rest = [...shownUrl.searchParams].filter(([k]) => k !== 'at').map(([k, v]) => (v ? `${k}=${encodeURIComponent(v)}` : k));
+			if (at) rest.push(`at=${at}`);
+			const href = rest.length ? resolve(`/?${rest.join('&')}`) : resolve('/');
+			if (at && !atParam) goto(href, { shallow: true, state: { card: true } });
+			else if (!at && page.state.card) history.back();
+			else goto(href, { shallow: true, replace: true, state: page.state });
+		});
+	});
 
 	const nextPatrol = $derived(data.nextCheckAt <= Date.now() ? '巡房中' : timeAgo(data.nextCheckAt));
 
@@ -135,7 +229,11 @@
 	</button>
 	<ul class="chips" aria-label="即時狀態">
 		<li><i class="dot up"></i>{awake} 位值班中</li>
-		{#if asleep}<li class="warn"><i class="dot down"></i>{asleep} 位睡著了</li>{/if}
+		{#if asleep}
+			<li class="warn">
+				<button onclick={visitSleeper} title="看睡著的是哪個專案"><i class="dot down"></i>{asleep} 位睡著了</button>
+			</li>
+		{/if}
 		{#if data.github}<li class="hide-sm">GitHub 一年 {data.github.total} 次提交</li>{/if}
 		<li class="hide-sm">下次巡房 {nextPatrol}</li>
 	</ul>
@@ -165,7 +263,7 @@
 {#if panel && view !== 'all'}
 	{#key view}
 		<!-- 打開或換內容時焦點移進卡片，螢幕閱讀器跟鍵盤都從卡片開頭接著走 -->
-		<aside class="panel" aria-live="polite" tabindex="-1" {@attach (el) => el.focus({ preventScroll: true })}>
+		<aside class="panel" aria-live="polite" tabindex="-1" {@attach (el) => el.focus({ preventScroll: true })} {@attach swipeToClose}>
 			<button class="close" onclick={close} aria-label="關閉">✕</button>
 
 			{#if selected}
@@ -290,8 +388,23 @@
 		color: var(--text-soft);
 	}
 	.chips li.warn {
+		padding: 0;
 		color: #ffb3c1;
 		border-color: rgb(255 93 122 / 0.35);
+		transition: box-shadow 0.2s;
+	}
+	/* 疊在原本的深色底上，不要換掉它，不然後面是淺色牆時字會看不清楚 */
+	.chips li.warn:hover {
+		box-shadow: inset 0 0 0 99px rgb(255 93 122 / 0.16);
+	}
+	.chips li > button {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 7px 14px;
+		border: 0;
+		border-radius: inherit;
+		background: none;
 	}
 
 	.hint {
@@ -605,6 +718,9 @@
 			padding: 6px 11px;
 			font-size: 12px;
 		}
+		.chips li > button {
+			padding: 6px 11px;
+		}
 		/* 手機：資訊卡變成底部抽屜，上半部還看得到 3D */
 		.panel {
 			top: auto;
@@ -616,6 +732,17 @@
 			padding: 22px 20px calc(96px + env(safe-area-inset-bottom));
 			border-radius: var(--r-lg) var(--r-lg) 0 0;
 			animation-name: sheetIn;
+			transition: translate 0.18s var(--ease);
+		}
+		/* 抽屜的把手：提示可以往下滑關掉 */
+		.panel::before {
+			content: '';
+			display: block;
+			width: 40px;
+			height: 4px;
+			margin: -10px auto 12px;
+			border-radius: 2px;
+			background: rgb(255 255 255 / 0.22);
 		}
 		@keyframes sheetIn {
 			from {
