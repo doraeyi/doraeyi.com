@@ -678,18 +678,22 @@ export function createRoom(
 	// 畫面大小不變但透視被壓平，升起來的格子從上面看才會剛好對齊
 	const BASE_FOV = camera.fov;
 	const QR_FOV = 3.5;
-	const qrTarget = new THREE.Vector3(0, QR_H, 0);
+	// 後牆往外倒平後會凸出底板上緣一整面牆高，取景要連它一起框進來，招牌才不會被切掉；
+	// 所以鏡頭對準的不是底板中心，而是「底板 + 倒下的後牆」這一整塊的中心
+	const QR_EDGE = 0.35;
+	const qrUp = S / 2 + WALL_H + 0.25;
+	const qrDown = S / 2 + QR_EDGE;
+	const qrTarget = new THREE.Vector3(0, QR_H, -(qrUp - qrDown) / 2);
 	const lookTarget = new THREE.Vector3();
 	const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 	const tanHalf = (fov: number) => Math.tan(THREE.MathUtils.degToRad(fov / 2));
 	// 上面的狀態列、下面的說明卡跟切換列會蓋住畫面，QR 只放在中間沒被蓋到的那段
 	const QR_TOP = 72;
 	const QR_BOTTOM = 170;
-	/** 從正上方看，底板剛好塞進沒被蓋到的範圍時的半高 */
+	/** 從正上方看，底板跟倒下的後牆剛好塞進沒被蓋到的範圍時的半高；左右只保證底板，側牆窄螢幕會切到 */
 	const qrHalf = () => {
-		const need = S / 2 + 0.35;
 		const free = Math.max(0.4, (height - QR_TOP - QR_BOTTOM) / height);
-		return Math.max(need / free, (need * height) / width) * 1.04;
+		return Math.max((qrUp + qrDown) / 2 / free, ((S / 2 + QR_EDGE) * height) / width) * 1.04;
 	};
 
 	function applyCamera(t: number) {
