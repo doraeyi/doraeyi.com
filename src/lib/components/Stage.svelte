@@ -19,8 +19,12 @@
 		onqr: (on: boolean, pull: number) => void;
 		onselect: (key: string) => void;
 		onmode: (mode: SceneMode) => void;
+		/** 走進去（第一人稱，WASD／搖桿走） */
+		walk: boolean;
+		/** 走進去時眼前正對著哪張桌子 */
+		onnear: (key: string | null) => void;
 	}
-	let { world, focus, panel, qr, onselect, onqr, onmode }: Props = $props();
+	let { world, focus, panel, qr, onselect, onqr, onmode, walk, onnear }: Props = $props();
 
 	let canvas = $state<HTMLCanvasElement>();
 	let ready = $state(false);
@@ -62,6 +66,87 @@
 	$effect(() => {
 		if (ready) send({ type: 'qr', on: qr });
 	});
+	$effect(() => {
+		if (ready) send({ type: 'walk', on: walk });
+	});
+
+	// ---- 走路：鍵盤 WASD／方向鍵，手機用左下角的搖桿 ----
+	const KEYS: Record<string, [number, number]> = {
+		KeyW: [0, 1],
+		ArrowUp: [0, 1],
+		KeyS: [0, -1],
+		ArrowDown: [0, -1],
+		KeyA: [-1, 0],
+		ArrowLeft: [-1, 0],
+		KeyD: [1, 0],
+		ArrowRight: [1, 0]
+	};
+	// 只是按鍵的暫存，不需要觸發畫面更新
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	const held = new Set<string>();
+	let shift = false;
+	function sendKeys() {
+		let x = 0;
+		let z = 0;
+		for (const k of held) {
+			x += KEYS[k][0];
+			z += KEYS[k][1];
+		}
+		send({ type: 'move', x, z, run: shift });
+	}
+	const typing = (e: KeyboardEvent) => e.target instanceof HTMLElement && e.target.closest('input, textarea, select, [contenteditable]');
+	function onKeyDown(e: KeyboardEvent) {
+		if (!walk || e.ctrlKey || e.metaKey || e.altKey || typing(e)) return;
+		if (e.code in KEYS) {
+			e.preventDefault();
+			held.add(e.code);
+		} else if (e.key === 'Shift') shift = true;
+		else if (e.code === 'KeyE') return send({ type: 'interact' });
+		else return;
+		sendKeys();
+	}
+	function onKeyUp(e: KeyboardEvent) {
+		if (e.code in KEYS) held.delete(e.code);
+		else if (e.key === 'Shift') shift = false;
+		else return;
+		if (walk) sendKeys();
+	}
+	// 視窗失去焦點時放開所有按鍵，不然人會一直往前走
+	function releaseAll() {
+		held.clear();
+		shift = false;
+		stick = null;
+		send({ type: 'move', x: 0, z: 0, run: false });
+	}
+	$effect(() => {
+		if (!walk) releaseAll();
+	});
+
+	/** 搖桿：按下去的地方是中心，手指離中心多遠、往哪邊，就往哪走 */
+	const STICK_R = 48;
+	let stick = $state<{ id: number; x: number; y: number; dx: number; dy: number } | null>(null);
+	function stickDown(e: PointerEvent) {
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+		stick = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, dy: 0 };
+	}
+	function stickMove(e: PointerEvent) {
+		if (!stick || e.pointerId !== stick.id) return;
+		let dx = e.clientX - stick.x;
+		let dy = e.clientY - stick.y;
+		const len = Math.hypot(dx, dy);
+		if (len > STICK_R) {
+			dx = (dx / len) * STICK_R;
+			dy = (dy / len) * STICK_R;
+		}
+		stick = { ...stick, dx, dy };
+		// 推到底就是跑
+		send({ type: 'move', x: dx / STICK_R, z: -dy / STICK_R, run: len > STICK_R * 1.6 });
+	}
+	function stickUp(e: PointerEvent) {
+		if (!stick || e.pointerId !== stick.id) return;
+		stick = null;
+		send({ type: 'move', x: 0, z: 0, run: false });
+	}
 
 	onMount(() => {
 		const started = performance.now();
@@ -94,6 +179,7 @@
 				sceneInfo.gpu = msg.gpu;
 				sceneInfo.readyMs = Math.round(performance.now() - started);
 				send({ type: 'focus', focus, panel });
+				if (walk) send({ type: 'walk', on: true });
 				// 軟體繪圖（沒有真的 GPU）先降到低畫質，還是不行再交給下面的降級
 				if (/swiftshader|llvmpipe|software/i.test(msg.gpu) && tier === 2 && !capture) {
 					tier = 1;
@@ -119,6 +205,8 @@
 				onselect(msg.key);
 			} else if (msg.type === 'qr') {
 				onqr(msg.on, msg.pull);
+			} else if (msg.type === 'near') {
+				onnear(msg.key);
 			} else if (msg.type === 'error') {
 				toList(`3D 發生錯誤：${msg.message}`);
 			}
@@ -223,8 +311,14 @@
 		c.addEventListener('wheel', onWheel, { passive: false });
 		addEventListener('resize', onResize);
 		document.addEventListener('visibilitychange', onVis);
+		addEventListener('keydown', onKeyDown);
+		addEventListener('keyup', onKeyUp);
+		addEventListener('blur', releaseAll);
 
 		return () => {
+			removeEventListener('keydown', onKeyDown);
+			removeEventListener('keyup', onKeyUp);
+			removeEventListener('blur', releaseAll);
 			cancelAnimationFrame(raf);
 			c.removeEventListener('pointerdown', onDown);
 			c.removeEventListener('pointermove', onMove);
@@ -240,6 +334,12 @@
 
 {#if sceneInfo.mode !== 'list'}
 	<canvas bind:this={canvas} class:ready class:hovering aria-label="兩間 3D 房間：拖曳旋轉，點桌子看專案"></canvas>
+	{#if walk && ready}
+		<!-- 手機的搖桿：只有觸控螢幕才顯示（CSS 控制） -->
+		<div class="stick" role="presentation" onpointerdown={stickDown} onpointermove={stickMove} onpointerup={stickUp} onpointercancel={stickUp}>
+			<i style:translate="{stick?.dx ?? 0}px {stick?.dy ?? 0}px"></i>
+		</div>
+	{/if}
 	{#if !ready}
 		<div class="loading" aria-live="polite">
 			<div><i></i><i></i><i></i></div>
@@ -268,6 +368,32 @@
 	}
 	canvas.ready {
 		opacity: 1;
+	}
+	.stick {
+		display: none;
+		position: fixed;
+		left: 24px;
+		bottom: calc(108px + env(safe-area-inset-bottom));
+		z-index: 12;
+		width: 120px;
+		height: 120px;
+		border: 1px solid var(--line);
+		border-radius: 50%;
+		background: rgb(14 14 22 / 0.45);
+		backdrop-filter: blur(8px);
+		touch-action: none;
+	}
+	.stick i {
+		position: absolute;
+		inset: 36px;
+		border-radius: 50%;
+		background: rgb(255 255 255 / 0.85);
+		pointer-events: none;
+	}
+	@media (pointer: coarse) {
+		.stick {
+			display: block;
+		}
 	}
 	.loading {
 		position: fixed;

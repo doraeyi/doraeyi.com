@@ -5,7 +5,8 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { Keeper } from '#lib/types.js';
 
-export type Part = [geometry: THREE.BufferGeometry, color: THREE.ColorRepresentation, matrix?: THREE.Matrix4];
+/** pattern：材質紋路（木紋、牆面…），見 detail.ts 的 PATTERN；不給就是素面 */
+export type Part = [geometry: THREE.BufferGeometry, color: THREE.ColorRepresentation, matrix?: THREE.Matrix4, pattern?: number];
 
 export const m4 = (x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) =>
 	new THREE.Matrix4().compose(
@@ -17,7 +18,7 @@ export const m4 = (x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, 
 /** 零件套上位置跟顏色後合成一個 geometry */
 export function bake(parts: Part[]) {
 	const color = new THREE.Color();
-	const geos = parts.map(([g, c, m]) => {
+	const geos = parts.map(([g, c, m, pattern = 0]) => {
 		const geo = g.clone();
 		if (m) geo.applyMatrix4(m);
 		// Color.set 會自動把 sRGB 轉成線性色彩，不用再轉一次
@@ -26,6 +27,7 @@ export function bake(parts: Part[]) {
 		const arr = new Float32Array(n * 3);
 		for (let i = 0; i < n; i++) arr.set([color.r, color.g, color.b], i * 3);
 		geo.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+		geo.setAttribute('pattern', new THREE.BufferAttribute(new Float32Array(n).fill(pattern), 1));
 		return geo;
 	});
 	const merged = mergeGeometries(geos, false)!;

@@ -5,8 +5,8 @@
 	let { github: gh }: { github: GithubData } = $props();
 </script>
 
-<p class="eyebrow">地毯上一根柱子 = 一天</p>
-<h2>GitHub 提交地毯</h2>
+<p class="eyebrow">花圃裡一株 = 一天</p>
+<h2>GitHub 提交花圃</h2>
 <dl class="facts">
 	<div><dt>過去一年</dt><dd>{gh.total} 次</dd></div>
 	<div><dt>最多的一天</dt><dd>{Math.max(...gh.days.map((d) => d.count))} 次</dd></div>

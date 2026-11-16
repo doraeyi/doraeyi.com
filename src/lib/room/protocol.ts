@@ -33,7 +33,13 @@ export type ToScene =
 	| { type: 'tier'; tier: Tier }
 	/** 直接切換 QR code（切換列上的按鈕） */
 	| { type: 'qr'; on: boolean }
-	| { type: 'visible'; visible: boolean };
+	| { type: 'visible'; visible: boolean }
+	/** 走進去（第一人稱）／走出來 */
+	| { type: 'walk'; on: boolean }
+	/** 走路的方向：x 往右、z 往前，長度 1 是全速；run 是按著 Shift */
+	| { type: 'move'; x: number; z: number; run: boolean }
+	/** 按 E：看眼前那台電腦 */
+	| { type: 'interact' };
 
 export interface SceneStats {
 	fps: number;
@@ -53,4 +59,6 @@ export type FromScene =
 	| { type: 'select'; key: string }
 	/** on：現在是不是 QR code；pull：往下拉了多少（0~1，到 1 就變身），往回推是負的 */
 	| { type: 'qr'; on: boolean; pull: number }
+	/** 走進去時眼前正對著哪張桌子（走開了是 null），介面顯示「按 E 看」 */
+	| { type: 'near'; key: string | null }
 	| { type: 'error'; message: string };

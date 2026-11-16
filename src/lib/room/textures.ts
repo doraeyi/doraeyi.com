@@ -23,7 +23,8 @@ function texture(c: OffscreenCanvas | HTMLCanvasElement) {
 
 /** 卡通光影：只有三階亮度 */
 export function toonRamp() {
-	const data = new Uint8Array([90, 90, 90, 255, 175, 175, 175, 255, 255, 255, 255, 255]);
+	// 暗面別太黑：太黑的話牆跟木頭的紋路都看不到，像剪紙
+	const data = new Uint8Array([118, 118, 118, 255, 184, 184, 184, 255, 255, 255, 255, 255]);
 	const t = new THREE.DataTexture(data, 3, 1);
 	t.minFilter = t.magFilter = THREE.NearestFilter;
 	t.needsUpdate = true;
@@ -238,16 +239,17 @@ export function carpetLabelTexture(total: number) {
 	const W = 512,
 		H = 160;
 	const { c, ctx } = canvas2d(W, H);
-	ctx.fillStyle = '#f7f5fc';
+	// 花園裡的木頭立牌
+	ctx.fillStyle = '#f8f4ea';
 	ctx.beginPath();
 	ctx.roundRect(4, 4, W - 8, H - 8, 26);
 	ctx.fill();
 	ctx.lineWidth = 6;
-	ctx.strokeStyle = '#8b7bff';
+	ctx.strokeStyle = '#9a7350';
 	ctx.stroke();
 
-	// GitHub 的貓頭鷹太複雜，用一個小方格圖示代表「提交格子」
-	const colors = ['#ddd6ee', '#b9acf3', '#9584f5', '#7059e6', '#4cc9f0'];
+	// GitHub 的貓頭鷹太複雜，用一個小方格圖示代表「提交格子」，顏色跟花圃一樣由淡綠到深綠
+	const colors = ['#b9c79d', '#93c46f', '#62a650', '#3e8744', '#2a6633'];
 	for (let r = 0; r < 3; r++)
 		for (let k = 0; k < 3; k++) {
 			ctx.fillStyle = colors[(r * 2 + k) % colors.length];
@@ -255,11 +257,11 @@ export function carpetLabelTexture(total: number) {
 		}
 
 	ctx.textBaseline = 'alphabetic';
-	ctx.fillStyle = '#2a2442';
+	ctx.fillStyle = '#2f2a22';
 	fit(ctx, 'GitHub 提交紀錄', W - 150, 900, 44);
 	ctx.fillText('GitHub 提交紀錄', 118, 76);
-	ctx.fillStyle = '#6b5fa8';
-	const sub = `過去一年 ${total} 次・一天一根・右邊是今天`;
+	ctx.fillStyle = '#6b5a43';
+	const sub = `過去一年 ${total} 次・一天一株・右邊是今天`;
 	fit(ctx, sub, W - 150, 600, 24);
 	ctx.fillText(sub, 120, 118);
 	return texture(c);

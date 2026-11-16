@@ -23,5 +23,11 @@ export function dispatch(r: RoomHandle, msg: Exclude<ToScene, { type: 'init' }>)
 			return r.setQr(msg.on);
 		case 'visible':
 			return r.setVisible(msg.visible);
+		case 'walk':
+			return r.setWalk(msg.on);
+		case 'move':
+			return r.walkMove(msg.x, msg.z, msg.run);
+		case 'interact':
+			return r.interact();
 	}
 }

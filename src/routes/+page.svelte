@@ -42,6 +42,10 @@
 	/** 往下拉變出來的 GitHub QR code；pull 是拉到一半的進度 */
 	let qr = $state(false);
 	let pull = $state(0);
+	/** 走進去：第一人稱，WASD／搖桿在房子跟花園裡走；near 是眼前正對著的那台電腦 */
+	let walk = $state(false);
+	let near = $state<string | null>(null);
+	const nearProject = $derived(walk && near ? (data.projects.find((p) => p.key === near) ?? null) : null);
 
 	const selected = $derived(data.projects.find((p) => p.key === view) ?? null);
 	const roomView = $derived<Host | null>(view === 'vercel' ? 'vercel' : view === 'vm' ? 'vm' : null);
@@ -68,6 +72,7 @@
 	function open(v: Focus | 'about') {
 		hint = false;
 		qr = false;
+		walk = false;
 		if (view === v && panel) return close();
 		remember();
 		view = v;
@@ -138,6 +143,15 @@
 		}
 	}
 
+	function toggleWalk() {
+		walk = !walk;
+		hint = false;
+		if (walk) {
+			qr = false;
+			panel = false;
+		}
+	}
+
 	function select(key: string) {
 		hint = false;
 		view = key;
@@ -154,6 +168,7 @@
 	function visitSleeper() {
 		const i = sleepers.findIndex((p) => p.key === view);
 		qr = false;
+		walk = false;
 		select(sleepers[(i + 1) % sleepers.length].key);
 	}
 
@@ -215,10 +230,21 @@
 	<meta name="twitter:card" content="summary_large_image" />
 </svelte:head>
 
-<svelte:window onkeydown={(e) => e.key === 'Escape' && panel && close()} />
+<!-- Esc：先關資訊卡，沒有卡片時再離開走路模式 -->
+<svelte:window onkeydown={(e) => e.key === 'Escape' && (panel ? close() : walk && (walk = false))} />
 
 {#if mode !== 'list'}
-	<Stage {world} focus={stageFocus} panel={panel && view !== 'all'} {qr} {onqr} onselect={select} onmode={(m) => (mode = m)} />
+	<Stage
+		{world}
+		focus={stageFocus}
+		panel={panel && view !== 'all'}
+		{qr}
+		{onqr}
+		{walk}
+		onnear={(key) => (near = key)}
+		onselect={select}
+		onmode={(m) => (mode = m)}
+	/>
 {/if}
 
 <!-- 上方：名字 + 即時狀態 -->
@@ -247,14 +273,25 @@
 	<p class="hint">拖曳旋轉・點桌子看專案・一直往下拉有驚喜</p>
 {/if}
 
+{#if walk && mode !== 'list'}
+	<p class="walk-hint">
+		<span class="far">WASD／方向鍵走・Shift 跑・拖曳轉頭・E 看電腦・Esc 離開</span>
+		<span class="near">左下搖桿走・拖曳轉頭・點電腦看專案</span>
+	</p>
+	{#if nearProject && !panel}
+		<button class="near-prompt" onclick={() => select(nearProject.key)}><kbd>E</kbd>看 {nearProject.title}</button>
+	{/if}
+{/if}
+
 <!-- 下方：切換停靠點 -->
 <nav class="dock" aria-label="切換視角">
-	<button class:on={view === 'all' && !qr} onclick={() => ((view = 'all'), (panel = false), (qr = false))}>全景</button>
-	<button class:on={view === 'vercel' && !qr} onclick={() => open('vercel')}><i aria-hidden="true">▲ </i>Vercel <small>{byHost('vercel').length}</small></button>
-	<button class:on={view === 'vm' && !qr} onclick={() => open('vm')}><i aria-hidden="true">▤ </i>VM <small>{byHost('vm').length}</small></button>
-	{#if data.github}<button class:on={view === 'github' && !qr} onclick={() => open('github')}>GitHub</button>{/if}
-	<button class:on={view === 'about' && !qr} onclick={() => open('about')}>關於我</button>
-	<button class:on={qr} onclick={() => ((qr = !qr), (panel = false))} aria-pressed={qr}>QR</button>
+	<button class:on={view === 'all' && !qr && !walk} onclick={() => ((view = 'all'), (panel = false), (qr = false), (walk = false))}>全景</button>
+	<button class:on={view === 'vercel' && !qr && !walk} onclick={() => open('vercel')}><i aria-hidden="true">▲ </i>Vercel <small>{byHost('vercel').length}</small></button>
+	<button class:on={view === 'vm' && !qr && !walk} onclick={() => open('vm')}><i aria-hidden="true">▤ </i>VM <small>{byHost('vm').length}</small></button>
+	{#if data.github}<button class:on={view === 'github' && !qr && !walk} onclick={() => open('github')}>GitHub</button>{/if}
+	<button class:on={view === 'about' && !qr && !walk} onclick={() => open('about')}>關於我</button>
+	<button class:on={qr} onclick={() => ((qr = !qr), (panel = false), (walk = false))} aria-pressed={qr}>QR</button>
+	{#if mode !== 'list'}<button class:on={walk} onclick={toggleWalk} aria-pressed={walk}>走進去</button>{/if}
 </nav>
 
 {#if qr}<QrCard url={data.qr.url} name={profile.name} />{/if}
@@ -302,7 +339,7 @@
 	<aside class="dev-note">
 		{#if !data.source.vercel}<p>Vercel 房是<b>示範資料</b>：在 <code>.env</code> 設定 <code>VC_TOKEN</code> 就會換成真的。</p>{/if}
 		{#if !data.source.database}<p>讀不到資料庫：看伺服器 log 的 <code>[site]</code> 錯誤。</p>{/if}
-		{#if !data.source.github}<p>抓不到 GitHub 資料，地毯不會出現。</p>{/if}
+		{#if !data.source.github}<p>抓不到 GitHub 資料，花圃不會出現。</p>{/if}
 	</aside>
 {/if}
 
@@ -430,6 +467,72 @@
 		}
 	}
 
+	/* ---------- 走進去 ---------- */
+	.walk-hint {
+		position: fixed;
+		left: 50%;
+		top: 84px;
+		z-index: 10;
+		translate: -50% 0;
+		margin: 0;
+		padding: 7px 14px;
+		border-radius: var(--r-pill);
+		background: rgb(14 14 22 / 0.6);
+		backdrop-filter: blur(10px);
+		color: var(--text-soft);
+		font-size: 12px;
+		white-space: nowrap;
+		pointer-events: none;
+		animation: hintIn 0.5s var(--ease) both;
+	}
+	.walk-hint .near {
+		display: none;
+	}
+	@media (pointer: coarse) {
+		.walk-hint .far {
+			display: none;
+		}
+		.walk-hint .near {
+			display: inline;
+		}
+	}
+	.near-prompt {
+		position: fixed;
+		left: 50%;
+		bottom: 96px;
+		z-index: 11;
+		translate: -50% 0;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 10px 18px 10px 10px;
+		border: 1px solid var(--line);
+		border-radius: var(--r-pill);
+		background: rgb(14 14 22 / 0.8);
+		backdrop-filter: blur(10px);
+		font-size: 14px;
+		font-weight: 600;
+		animation: hintIn 0.3s var(--ease) both;
+	}
+	.near-prompt kbd {
+		display: grid;
+		place-items: center;
+		width: 26px;
+		height: 26px;
+		border-radius: 7px;
+		background: #fff;
+		color: #16161c;
+		font: 700 13px var(--font-mono);
+	}
+	@media (pointer: coarse) {
+		.near-prompt kbd {
+			display: none;
+		}
+		.near-prompt {
+			padding-left: 18px;
+		}
+	}
+
 	.pull {
 		position: fixed;
 		left: 50%;
@@ -468,6 +571,8 @@
 		translate: -50% 0;
 		display: flex;
 		gap: 4px;
+		/* left: 50% 會讓瀏覽器只給一半的寬度，按鈕一多就被擠到捲動區外面；寬度直接用內容的寬 */
+		width: max-content;
 		max-width: calc(100vw - 32px);
 		overflow-x: auto;
 		padding: 5px;
