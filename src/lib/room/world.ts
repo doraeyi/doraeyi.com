@@ -42,6 +42,7 @@ const NAMES: Record<Keeper, string[]> = {
 };
 
 export const KEEPER_LABEL: Record<Keeper, string> = { robot: '機器人', cat: '貓', dog: '狗' };
+export const KEEPER_EMOJI: Record<Keeper, string> = { robot: '🤖', cat: '🐱', dog: '🐶' };
 
 export function domainOf(url: string | null) {
 	if (!url) return null;

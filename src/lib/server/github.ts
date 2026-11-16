@@ -17,9 +17,7 @@ async function get(url: string, accept?: string) {
 }
 
 /** 從格子圖的 HTML 抓每天的提交數：格子有 data-date，數字寫在對應的 tool-tip 裡 */
-async function fetchDays(login: string): Promise<{ days: ActivityDay[]; total: number }> {
-	const html = await (await get(`https://github.com/users/${login}/contributions`)).text();
-
+export function parseContributions(html: string): { days: ActivityDay[]; total: number } {
 	const dates = new Map<string, string>();
 	for (const m of html.matchAll(/data-date="(\d{4}-\d{2}-\d{2})"[^>]*?id="([^"]+)"/g)) dates.set(m[2], m[1]);
 
@@ -34,6 +32,10 @@ async function fetchDays(login: string): Promise<{ days: ActivityDay[]; total: n
 	const total = /([\d,]+)\s+contributions?\s+in the last year/.exec(html);
 	days.sort((a, b) => a.date.localeCompare(b.date));
 	return { days, total: total ? Number(total[1].replace(/,/g, '')) : days.reduce((n, d) => n + d.count, 0) };
+}
+
+async function fetchDays(login: string) {
+	return parseContributions(await (await get(`https://github.com/users/${login}/contributions`)).text());
 }
 
 const KIND: Record<string, string> = {

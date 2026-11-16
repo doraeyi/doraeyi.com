@@ -1,3 +1,5 @@
+import type { Host, Project } from '#lib/types.js';
+
 const FRAMEWORKS: Record<string, string> = {
 	nextjs: 'Next.js',
 	sveltekit: 'SvelteKit',
@@ -37,3 +39,12 @@ export function timeAgo(ts: number) {
 	}
 	return '剛剛';
 }
+
+export const ROOMS: Record<Host, { name: string; blurb: string }> = {
+	vercel: { name: 'Vercel 房', blurb: '部署在 Vercel 上的專案，清單直接從 Vercel 抓，上線新東西這裡就會多一張桌子。' },
+	vm: { name: 'VM 機房', blurb: '跑在同事 VM 上的專案：Docker 容器、Traefik 轉網域，GitHub Actions 推上去自動部署。' }
+};
+
+/** 管理員現在的狀態：cls 給燈號跟狀態框配色用 */
+export const projectStatus = (p: Project) =>
+	p.asleep ? { cls: 'down', text: '睡著了' } : p.health ? { cls: 'up', text: '醒著值班中' } : { cls: 'idle', text: '等第一次巡房' };
