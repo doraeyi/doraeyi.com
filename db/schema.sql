@@ -66,3 +66,22 @@ CREATE TABLE IF NOT EXISTS screenshot (
   project_key  TEXT PRIMARY KEY,
   taken_at     INTEGER NOT NULL            -- 毫秒時間戳，也拿來當網址版本號
 );
+
+-- Claude 工作狀態：電腦上的 Claude Code 開工、做完一輪都會回報（scripts/claude-presence.mjs）
+-- 一個 session 一列；太久沒回報就當作沒在做（src/lib/server/live.ts）
+CREATE TABLE IF NOT EXISTS presence (
+  session_id   TEXT PRIMARY KEY,
+  repo         TEXT,                        -- git remote 的 owner/name（小寫），不是 git repo 就是 NULL
+  dir          TEXT NOT NULL,               -- 資料夾名稱（小寫），對不到 repo 時拿來比專案代號
+  state        TEXT NOT NULL,               -- working = 正在做；waiting = 做完了，等你回覆
+  updated_at   INTEGER NOT NULL             -- 毫秒時間戳
+);
+
+-- GitHub webhook 收到的 push：管理員會跑去花園幫當天那棵樹澆水
+-- 只留最近一天，舊的在寫入時順便刪掉
+CREATE TABLE IF NOT EXISTS push (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo     TEXT NOT NULL,                   -- owner/name（小寫）
+  commits  INTEGER NOT NULL,
+  at       INTEGER NOT NULL                 -- 毫秒時間戳
+);

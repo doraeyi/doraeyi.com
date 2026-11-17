@@ -1,9 +1,10 @@
 import QRCode from 'qrcode';
-import type { GithubData, Health, Keeper, Project, SiteData } from '#lib/types.js';
-import { getHealth, getProfile, getProjectMeta, getShots, getVmProjects, type ProjectMeta } from './db.js';
+import type { GithubData, Health, Keeper, LiveData, Project, SiteData } from '#lib/types.js';
+import { getHealth, getPresence, getProfile, getProjectMeta, getPushes, getShots, getVmProjects, type ProjectMeta } from './db.js';
 import { fallbackProfile, fallbackProjects } from './fallback.js';
 import { fetchGithub, GITHUB_LOGIN } from './github.js';
 import { checkIfDue, nextCheckAt, type Target } from './health.js';
+import { buildLive, PUSH_TTL, WAITING_TTL } from './live.js';
 import { captureAll, SHOT_EVERY } from './shots.js';
 import { fetchVercelProjects, hasVercel, type BaseProject } from './vercel.js';
 
@@ -141,6 +142,18 @@ export async function getSiteData(): Promise<SiteData> {
 		qr,
 		source: { ...base.source, github: github !== null }
 	};
+}
+
+/** 管理員現在在做什麼：Claude 的工作狀態、最近的 push */
+export async function getLive(): Promise<LiveData> {
+	const base = await loadBase();
+	const now = Date.now();
+	return buildLive(
+		base.projects,
+		await safe('讀取 presence', async () => getPresence(now - WAITING_TTL), []),
+		await safe('讀取 push', async () => getPushes(now - PUSH_TTL), []),
+		now
+	);
 }
 
 /** 伺服器啟動後每小時看一次有沒有該巡房的專案；沒人逛網站也會照時間檢查 */

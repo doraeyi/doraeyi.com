@@ -203,3 +203,46 @@ export function saveShot(key: string, takenAt: number) {
 		.prepare('INSERT INTO screenshot (project_key, taken_at) VALUES (?, ?) ON CONFLICT(project_key) DO UPDATE SET taken_at = excluded.taken_at')
 		.run(key, takenAt);
 }
+
+export type PresenceState = 'working' | 'waiting';
+
+export interface PresenceRow {
+	repo: string | null;
+	dir: string;
+	state: PresenceState;
+	updated_at: number;
+}
+
+/** 記下某個 Claude session 現在的狀態；state 是 null 代表 session 結束了 */
+export function savePresence(session: string, p: { repo: string | null; dir: string; state: PresenceState | null }, now = Date.now()) {
+	if (!p.state) {
+		db().prepare('DELETE FROM presence WHERE session_id = ?').run(session);
+		return;
+	}
+	db()
+		.prepare(
+			`INSERT INTO presence (session_id, repo, dir, state, updated_at) VALUES (?, ?, ?, ?, ?)
+			 ON CONFLICT(session_id) DO UPDATE SET repo = excluded.repo, dir = excluded.dir, state = excluded.state, updated_at = excluded.updated_at`
+		)
+		.run(session, p.repo, p.dir, p.state, now);
+	// 關掉視窗沒送 SessionEnd 的 session 會一直留著，順便清掉一天以前的
+	db().prepare('DELETE FROM presence WHERE updated_at < ?').run(now - 24 * 3600 * 1000);
+}
+
+export function getPresence(since: number): PresenceRow[] {
+	return db().prepare('SELECT repo, dir, state, updated_at FROM presence WHERE updated_at >= ?').all(since) as PresenceRow[];
+}
+
+export function savePush(repo: string, commits: number, now = Date.now()) {
+	db().prepare('INSERT INTO push (repo, commits, at) VALUES (?, ?, ?)').run(repo, commits, now);
+	db().prepare('DELETE FROM push WHERE at < ?').run(now - 24 * 3600 * 1000);
+}
+
+export function getPushes(since: number): { id: number; repo: string; commits: number; at: number }[] {
+	return db().prepare('SELECT id, repo, commits, at FROM push WHERE at >= ? ORDER BY id').all(since) as {
+		id: number;
+		repo: string;
+		commits: number;
+		at: number;
+	}[];
+}

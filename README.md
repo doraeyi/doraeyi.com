@@ -16,23 +16,24 @@
 
 ## 📖 簡介
 
-doraeyi.com 是我的個人網站，整個首頁是一個可以拖曳旋轉的 3D 微縮模型：一棟有後花園的小工作室：房子左邊是 **Vercel 房**，右邊是 **VM 機房**（同事 VM 上用 Docker 跑的專案），中間是玄關；房子前面一條木頭露台，後花園裡有一塊 **GitHub 提交花圃**。
+doraeyi.com 是我的個人網站，整個首頁是一個可以拖曳旋轉的 3D 微縮模型：一棟有後花園的小工作室：房子左邊是 **工作室**（部署在 Vercel 的專案），右邊是 **機房**（同事 VM 上用 Docker 跑的專案），中間是玄關；房子前面一條木頭露台，後花園裡有一片 **GitHub 提交果園**，一天一棵樹。我用 Claude Code 改哪個專案，那張桌子的管理員就跟著工作；push 上去，它就走去花園幫今天的樹澆水。
 
 每個專案是一張桌子，桌前坐著一位管理員（機器人、貓或狗）。伺服器每 12 小時會去打一次每個專案的網址：正常的話管理員醒著值班、螢幕是綠的；連不上或回 5xx，管理員就會趴下睡著、頭上飄 Z、桌角的警示燈閃紅光。
 
 ## ✨ 功能特色
 
-- 🏠 **兩間 3D 房間**：Vercel 房的清單直接從 Vercel API 抓；VM 機房的專案登記在 SQLite 的 `vm_project` 表
+- 🏠 **兩間 3D 房間**：左邊工作室的清單直接從 Vercel API 抓；右邊機房的專案登記在 SQLite 的 `vm_project` 表（牆上不掛招牌）。房間跟花園之間隔著一整片落地玻璃，變成 QR 時收起來
 - 😴 **巡房管理員**：每 12 小時健康檢查一次，結果與妥善率存在 SQLite，掛掉的專案管理員會睡著；上方「N 位睡著了」可以點，鏡頭直接飛到睡著的那張桌子
-- 🚶 **走進去**：切換列的「走進去」換成第一人稱，從玄關門口出發，桌面用 WASD／方向鍵走（Shift 跑）、拖曳轉頭，手機用左下角的搖桿；牆、桌子、機櫃、草叢都穿不過去，玄關兩邊各有一道門通往兩間房間。走到電腦前會出現「E 看 xxx」，按 E（手機點一下）打開那個專案的資訊卡；Esc 離開
-- 🌱 **GitHub 提交花圃**：過去一年每天的提交數，一天一株，提交越多長越高、顏色越深（不需要 token）
+- 🚶 **走進去**：切換列的「走進去」換成第一人稱，從玄關門口出發，桌面用 WASD／方向鍵走（Shift 跑）、拖曳轉頭，手機用左下角的搖桿；牆、桌子、機櫃、草叢、落地玻璃都穿不過去，玄關兩邊各有一道門通往兩間房間，要去花園得從玄關的玻璃自動門出去（走近就自動打開）。走到電腦前會出現「E 看 xxx」，按 E（手機點一下）打開那個專案的資訊卡；Esc 離開
+- 🌳 **GitHub 提交果園**：過去一年每天的提交數，一天一棵樹，提交越多長越高、樹冠越大越綠；沒提交的那天只有一小撮草（不需要 token）
+- 🧑‍💻 **管理員跟著我一起工作**：電腦上的 Claude Code 在改哪個專案，那張桌子的管理員就盯著螢幕狂打字、螢幕捲程式碼、頭上冒「…」；Claude 做完一輪在等回覆，管理員轉過來歪頭、頭上打勾。push 上 GitHub 後，管理員拿起澆水壺，從房間側門走進玄關、穿過名牌底下那道便利商店式的玻璃自動門（有人靠近感應燈變綠、兩扇門往旁邊滑開），在花園裡繞過草叢，走到今天那棵樹旁邊澆水，樹當場長大，再走回位子。設定方式見〈管理員的工作狀態〉
 - 🔳 **房子上空拼出一個 QR code（視角錯覺）**：滾輪滾到最遠、按著往下拉或按「QR」，地板跟花園裡屬於 QR 深色格子的那幾格先從三個定位角往外凸起來，接著一塊塊從地上拔起來（地上留下洞），帶著原本的木地板、石磚、機房地板、草叢的顏色跟紋路，邊轉邊飛到房子上空不同的高度。鏡頭先繞到側邊讓人看清楚一堆漂浮的地板碎片，再滑到一個固定的位置（P），碎片在最後一刻「喀」一聲拼成 GitHub 個人頁的 QR code，同時燒成同材質的深色、房子淡成一張淺色的紙。做法：每一塊都擺在從 P 看向底板那一格的視線上，越靠近 P 縮得越小、側面也順著視線收斜，所以只有從 P 看才對得齊；P 依畫面大小算出來，換尺寸就重排；紋路用碎片還在地上時的座標算，飛起來也黏在上面。QR 模式可以左右拖、往下拖離開 P，碎片散開、變回地板的顏色，放手彈回去對準；往上推倒帶回房間（QR 矩陣在伺服器用 `qrcode` 算好）。手機掃不到自己的螢幕，所以 QR 卡片有「存圖」（`/qr.png`）跟「分享」（系統分享面板）
 - 🖥️ **螢幕顯示專案首頁**：巡房後幫正常的專案拍首頁截圖（WordPress mshots，免費、不用帳號），一天更新一次，存在資料庫旁的 `shots/` 資料夾，貼到桌上的螢幕跟資訊卡；掛掉的專案螢幕會變成紅色 DOWN
 - 🗂️ **點桌子看詳情**：網域、上次巡房、回應時間、HTTP 狀態、妥善率、技術、原始碼連結
 - 🌙 **跟著台灣時間變化**：晚上窗外變星空、房間點起暖燈
 - 📱 **手機也是 3D**：自動降畫質；真的跑不動才改成一般清單
 - 🔗 **分享預覽圖**：貼到 LINE、IG、Facebook 會出現 `static/og.jpg`（1200×630，場景截圖加一句介紹）
-- 🧪 **沒設定也能跑**：缺 Vercel token 時 Vercel 房用示範資料
+- 🧪 **沒設定也能跑**：缺 Vercel token 時工作室用示範資料
 
 ## 🏗️ 系統架構
 
@@ -84,7 +85,7 @@ doraeyi/
 | 清單 | 沒有 WebGL，或降到低畫質還是不到 20 FPS | 一般 HTML 清單 |
 
 - 畫質分兩級：**tier 2** 開即時陰影、解析度上限 1.75 倍；**tier 1** 關陰影、解析度上限 1.25 倍。手機、4 核心以下、記憶體 < 4GB、軟體繪圖一開始就用 tier 1，桌機跑不到 40 FPS 也會自動降
-- 牆、地板、桌子等靜態物件合成一個 mesh；管理員一個部位一個 mesh、全部共用同一個頂點色材質；花圃 365 株、地磚、假陰影、機櫃燈都用 InstancedMesh，QR 的方塊合成一個每格動態更新的 mesh；木紋、牆面、碎石、草叢的紋路在 shader 裡用世界座標算（`src/lib/room/detail.ts`），不載入圖片。整個場景大約 100 個 draw call、3.5 萬個三角形
+- 牆、地板、桌子等靜態物件合成一個 mesh；管理員一個部位一個 mesh、全部共用同一個頂點色材質；果園 365 棵樹（樹幹、樹冠各一個）、地磚、假陰影、機櫃燈都用 InstancedMesh，QR 的方塊合成一個每格動態更新的 mesh；木紋、牆面、碎石、草叢的紋路在 shader 裡用世界座標算（`src/lib/room/detail.ts`），不載入圖片。整個場景大約 100 個 draw call、3.5 萬個三角形
 - 文字（螢幕、招牌）用 OffscreenCanvas 畫成貼圖，Worker 裡也能畫
 
 **量測**：網址加上 `?debug=perf` 會出現量測面板（模式、FPS、畫質、draw call、GPU），加 `&scene=worker`、`&scene=main`、`&scene=list` 可強制切換模式。
@@ -96,6 +97,22 @@ doraeyi/
 - Vercel 回報正式部署失敗（`ERROR`）也算掛掉，不用打網址
 - 沒有公開網址的專案不檢查，管理員一直醒著
 - 管理員的種類（機器人、貓、狗）在同一間房間裡輪流分配，名字依專案固定
+
+## 🧑‍💻 管理員的工作狀態
+
+兩個來源，都只送「哪個 repo、現在什麼狀態」，不送對話內容或程式碼：
+
+- **Claude 在做事**：Claude Code 的 hook（`scripts/claude-presence.mjs`）在開工、呼叫工具（一分鐘最多一次）、做完一輪、關掉 session 時打 `POST /api/presence`，帶著 `PRESENCE_TOKEN`。呼叫工具時回報「做事中」，15 分鐘沒消息當作停了；做完一輪是「等回覆」，30 分鐘後消失
+- **push**：GitHub webhook 打 `POST /api/github`，用 `GITHUB_WEBHOOK_SECRET` 驗簽章（`X-Hub-Signature-256`）
+- 前端每 15 秒問一次 `GET /api/live`；剛打開網頁時，五分鐘內的 push 會補演一次
+- 對到哪張桌子：先比 repo（`owner/name`），對不到再拿資料夾名稱或 repo 名稱比專案代號、專案的 repo 名、網站網域（repo 叫 `doraeyi.com`、網站在 `doraeyi.com` 也算）。一個 monorepo 對到好幾個專案，每位管理員都會動；webhook 來的 repo 網站上沒有，就依名稱固定挑一位去澆水
+
+設定步驟：
+
+1. 產生兩串夠長的亂碼（例如 `openssl rand -hex 32` 跑兩次），分別當 `PRESENCE_TOKEN` 跟 `GITHUB_WEBHOOK_SECRET`，寫進 VM 上 `~/doraeyi-site/.env`，重新部署或 `docker compose up -d`
+2. 電腦上設環境變數 `DORAEYI_PRESENCE_TOKEN`（值跟 `PRESENCE_TOKEN` 一樣），重開 Claude Code
+3. 在 `~/.claude/settings.json` 的 `hooks` 裡，`UserPromptSubmit`、`PreToolUse`、`Stop`、`Notification`、`SessionEnd` 都加一個 `node <路徑>/claude-presence.mjs` 的 command hook
+4. 每個要澆水的 repo：Settings → Webhooks → Add webhook，Payload URL 填 `https://doraeyi.com/api/github`，**Content type 選 `application/json`**（選表單格式會被 SvelteKit 的 CSRF 檢查擋掉），Secret 填 `GITHUB_WEBHOOK_SECRET`，事件選「Just the push event」
 
 ## 🚀 快速開始
 
@@ -127,8 +144,10 @@ pnpm test:qr
 
 | 變數 | 說明 |
 | --- | --- |
-| `VC_TOKEN` | 到 <https://vercel.com/account/tokens> 建立，用來讀取 Vercel 房的專案清單 |
+| `VC_TOKEN` | 到 <https://vercel.com/account/tokens> 建立，用來讀取工作室（Vercel）的專案清單 |
 | `VC_TEAM_ID` | 專案放在 Team 底下才需要 |
+| `PRESENCE_TOKEN` | Claude Code hook 回報工作狀態用的密碼；沒設就不收 |
+| `GITHUB_WEBHOOK_SECRET` | GitHub webhook 的 Secret，驗證 push 真的是 GitHub 送的；沒設就不收 |
 | `DATABASE_URL` | SQLite 檔案路徑，沒設就用 `data/doraeyi.db`；VM 上由 compose 設成 `/data/doraeyi.db` |
 
 > 變數名稱不能用 `VERCEL_` 開頭（Vercel 保留給系統變數），所以這裡用 `VC_`。
@@ -139,9 +158,11 @@ pnpm test:qr
 | --- | --- |
 | `profile` | 名字、介紹、技能、連結 |
 | `project_meta` | 以 Vercel 專案名稱為 key，補中文名稱、介紹、標籤、`hidden`、`featured` |
-| `vm_project` | VM 機房的專案（Vercel 抓不到，手動登記）；新增一列就多一張桌子 |
+| `vm_project` | 機房（VM）的專案（Vercel 抓不到，手動登記）；新增一列就多一張桌子 |
 | `health` | 每個專案最近一次巡房結果，加上累計檢查、失敗次數（算妥善率） |
 | `screenshot` | 每個專案最近一次拍首頁截圖的時間；圖檔在資料庫旁邊的 `shots/` |
+| `presence` | 每個 Claude Code session 現在在做哪個 repo、做事中還是等回覆；一天沒消息就刪掉 |
+| `push` | GitHub webhook 收到的 push（只留最近一天），管理員看到新的就去澆水 |
 
 資料表定義在 `db/schema.sql`，伺服器第一次連線時會自動建立，`profile` 跟 `vm_project` 也會放入 `src/lib/server/fallback.ts` 的預設值（VM 上一開始有 blog 跟 doraeyi.com）。
 

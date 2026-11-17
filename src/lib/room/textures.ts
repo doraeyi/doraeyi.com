@@ -56,6 +56,71 @@ export function zTexture() {
 	return texture(c);
 }
 
+/**
+ * 頭上的對話泡泡。working：三個點輪流變深（frame 0~2），表示 Claude 正在做事；
+ * done：一個打勾，做完了在等你回覆
+ */
+export function bubbleTexture(kind: 'working' | 'done', frame = 0) {
+	const { c, ctx } = canvas2d(128, 112);
+	ctx.fillStyle = '#ffffff';
+	ctx.strokeStyle = '#1d2140';
+	ctx.lineWidth = 6;
+	ctx.beginPath();
+	ctx.roundRect(8, 8, 112, 72, 30);
+	ctx.moveTo(46, 78);
+	ctx.lineTo(40, 104);
+	ctx.lineTo(70, 78);
+	ctx.fill();
+	ctx.stroke();
+	// 尾巴跟泡泡接起來的地方把描邊蓋掉
+	ctx.fillRect(44, 72, 28, 9);
+	if (kind === 'working') {
+		for (let i = 0; i < 3; i++) {
+			ctx.fillStyle = i === frame ? '#e2793f' : '#f2c3a4';
+			ctx.beginPath();
+			ctx.arc(38 + i * 26, 44, 10, 0, Math.PI * 2);
+			ctx.fill();
+		}
+	} else {
+		ctx.strokeStyle = '#2fa36b';
+		ctx.lineWidth = 12;
+		ctx.lineCap = 'round';
+		ctx.lineJoin = 'round';
+		ctx.beginPath();
+		ctx.moveTo(40, 45);
+		ctx.lineTo(57, 61);
+		ctx.lineTo(89, 27);
+		ctx.stroke();
+	}
+	return texture(c);
+}
+
+/** Claude 在做事時螢幕上捲動的程式碼：上下接得起來，用 offset 一直往上捲 */
+export function codeTexture() {
+	const W = 256,
+		H = 256;
+	const { c, ctx } = canvas2d(W, H);
+	ctx.fillStyle = '#1b1d2b';
+	ctx.fillRect(0, 0, W, H);
+	const colors = ['#e2793f', '#8bd5ff', '#c3e88d', '#f4f1ea', '#c792ea', '#7f8aa8'];
+	let seed = 7;
+	const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+	for (let y = 10, indent = 0; y < H - 6; y += 16) {
+		indent = Math.max(0, Math.min(4, indent + (rand() < 0.3 ? 1 : rand() < 0.35 ? -1 : 0)));
+		let x = 14 + indent * 16;
+		const words = 1 + Math.floor(rand() * 4);
+		for (let w = 0; w < words && x < W - 20; w++) {
+			const len = 14 + rand() * 46;
+			ctx.fillStyle = colors[Math.floor(rand() * colors.length)];
+			ctx.fillRect(x, y, Math.min(len, W - 14 - x), 7);
+			x += len + 9;
+		}
+	}
+	const t = texture(c);
+	t.wrapT = THREE.RepeatWrapping;
+	return t;
+}
+
 function fit(ctx: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D, text: string, max: number, weight: number, size: number) {
 	let s = size;
 	do ctx.font = `${weight} ${s}px ${FONT}`;
@@ -100,49 +165,6 @@ export function screenTexture(d: Desk) {
 	ctx.fillStyle = color;
 	ctx.globalAlpha = 0.85;
 	ctx.fillRect(0, H - 10, W, 10);
-	return texture(c);
-}
-
-/** 房間牆上的招牌 */
-export function signTexture(label: string, sub: string, kind: 'vercel' | 'vm') {
-	const W = 512,
-		H = 160;
-	const { c, ctx } = canvas2d(W, H);
-	ctx.fillStyle = kind === 'vercel' ? '#0b0b0e' : '#16263a';
-	ctx.beginPath();
-	ctx.roundRect(4, 4, W - 8, H - 8, 28);
-	ctx.fill();
-	ctx.lineWidth = 4;
-	ctx.strokeStyle = kind === 'vercel' ? '#ffffff' : '#56d4ff';
-	ctx.stroke();
-
-	let x = 40;
-	if (kind === 'vercel') {
-		ctx.fillStyle = '#ffffff';
-		ctx.beginPath();
-		ctx.moveTo(x + 36, 42);
-		ctx.lineTo(x + 76, 114);
-		ctx.lineTo(x - 4, 114);
-		ctx.closePath();
-		ctx.fill();
-	} else {
-		// 一台小伺服器的圖示
-		ctx.fillStyle = '#56d4ff';
-		for (let i = 0; i < 3; i++) {
-			ctx.fillRect(x, 40 + i * 28, 72, 20);
-			ctx.fillStyle = '#16263a';
-			ctx.fillRect(x + 52, 46 + i * 28, 8, 8);
-			ctx.fillStyle = '#56d4ff';
-		}
-	}
-	x += 100;
-	ctx.fillStyle = '#ffffff';
-	ctx.font = `900 64px ${FONT}`;
-	ctx.textBaseline = 'alphabetic';
-	ctx.fillText(label, x, 98);
-	ctx.fillStyle = kind === 'vercel' ? '#a5a5b5' : '#9fd9f0';
-	ctx.font = `600 26px ${FONT}`;
-	ctx.fillText(sub, x + 2, 134);
 	return texture(c);
 }
 

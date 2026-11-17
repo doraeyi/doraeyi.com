@@ -1,14 +1,15 @@
 <script lang="ts">
-	import { frameworkLabel, projectStatus, timeAgo } from '#lib/format.js';
+	import { frameworkLabel, projectStatus, ROOMS, timeAgo } from '#lib/format.js';
 	import { domainOf, KEEPER_EMOJI, KEEPER_LABEL, keeperName } from '#lib/room/world.js';
-	import type { Project } from '#lib/types.js';
+	import type { DeskState, Project } from '#lib/types.js';
 
-	let { project: p }: { project: Project } = $props();
+	/** busy：Claude 正在改這個專案（working），或改完了在等回覆（waiting） */
+	let { project: p, busy = null }: { project: Project; busy?: DeskState | null } = $props();
 
 	const s = $derived(projectStatus(p));
 </script>
 
-<p class="eyebrow">{p.host === 'vercel' ? 'Vercel 房' : 'VM 機房'}・{KEEPER_EMOJI[p.keeper]} {keeperName(p.key, p.keeper)}（{KEEPER_LABEL[p.keeper]}）管理中</p>
+<p class="eyebrow">{ROOMS[p.host].name}・{KEEPER_EMOJI[p.keeper]} {keeperName(p.key, p.keeper)}（{KEEPER_LABEL[p.keeper]}）管理中</p>
 <h2>{p.title}</h2>
 {#if p.url}<a class="domain" href={p.url} target="_blank" rel="noreferrer">{domainOf(p.url)} ↗</a>{/if}
 {#if p.shot && !p.asleep}
@@ -27,6 +28,17 @@
 		<span>{p.url ? '還沒巡過這個專案，下一輪就會去看。' : '這個專案沒有公開網址，管理員只是坐著陪它。'}</span>
 	{/if}
 </div>
+
+{#if busy}
+	<div class="state busy">
+		<b>{busy === 'working' ? '正在改程式' : '改完一輪，等回覆中'}</b>
+		<span
+			>{busy === 'working'
+				? '我正在用 Claude 改這個專案，管理員盯著螢幕一起趕工。推上 GitHub 之後，它會跑去花園幫今天的樹澆水。'
+				: 'Claude 做完了一輪，管理員轉過來等下一步指示。'}</span
+		>
+	</div>
+{/if}
 
 {#if p.health}
 	<dl class="facts">
@@ -101,6 +113,13 @@
 	}
 	.state.down b {
 		color: #ff9db0;
+	}
+	.state.busy {
+		border-color: rgb(255 154 77 / 0.4);
+		background: rgb(255 154 77 / 0.1);
+	}
+	.state.busy b {
+		color: #ffc79e;
 	}
 	.state.idle {
 		border-color: var(--line);

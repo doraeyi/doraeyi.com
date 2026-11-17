@@ -41,8 +41,8 @@ export function timeAgo(ts: number) {
 }
 
 export const ROOMS: Record<Host, { name: string; blurb: string }> = {
-	vercel: { name: 'Vercel 房', blurb: '部署在 Vercel 上的專案，清單直接從 Vercel 抓，上線新東西這裡就會多一張桌子。' },
-	vm: { name: 'VM 機房', blurb: '跑在同事 VM 上的專案：Docker 容器、Traefik 轉網域，GitHub Actions 推上去自動部署。' }
+	vercel: { name: '工作室', blurb: '部署在 Vercel 上的專案，清單直接從 Vercel 抓，上線新東西這裡就會多一張桌子。' },
+	vm: { name: '機房', blurb: '跑在同事 VM 上的專案：Docker 容器、Traefik 轉網域，GitHub Actions 推上去自動部署。' }
 };
 
 /** 管理員現在的狀態：cls 給燈號跟狀態框配色用 */

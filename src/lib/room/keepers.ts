@@ -40,11 +40,29 @@ export const box = (x: number, y: number, z: number) => new THREE.BoxGeometry(x,
 export const cyl = (r1: number, r2: number, h: number, seg = 12) => new THREE.CylinderGeometry(r1, r2, h, seg);
 export const cone = (r: number, h: number) => new THREE.ConeGeometry(r, h, 10);
 
+export interface KeeperState {
+	asleep: boolean;
+	/** 被點到之後過了幾秒（跳一下） */
+	jump: number;
+	/** 螢幕在哪個方向（頭要轉多少） */
+	lookAt: number;
+	/** Claude 正在改這個專案：盯著螢幕一直打字；waiting：做完了，轉過來等你回覆 */
+	busy: 'working' | 'waiting' | null;
+	/** 走路的速度 0~1：身體一跳一跳、手跟著擺 */
+	walk: number;
+	/** 拿著澆水壺 */
+	carry: boolean;
+	/** 澆水的程度 0~1：壺嘴往前倒 */
+	water: number;
+}
+
 export interface KeeperRig {
 	root: THREE.Group;
 	/** 頭頂的位置（Zzz 從這裡飄出來） */
 	headTop: THREE.Object3D;
-	update(t: number, dt: number, s: { asleep: boolean; jump: number; lookAt: number }): void;
+	/** 澆水壺的壺嘴，水滴從這裡噴出來 */
+	spout: THREE.Object3D;
+	update(t: number, dt: number, s: KeeperState): void;
 	dispose(): void;
 }
 
@@ -196,6 +214,32 @@ export function buildKeeper(kind: Keeper, variant: number, mat: THREE.Material, 
 	}
 	head.add(eyes);
 
+	// 澆水壺：平常收起來，要去花園才拿出來。機器人用右手拿，貓狗抱在胸前
+	const can = new THREE.Group();
+	can.add(
+		mesh(
+			bake([
+				[cyl(0.09, 0.1, 0.17, 12), '#5aa9e6', m4(0, 0, 0)],
+				[cyl(0.092, 0.092, 0.025, 12), '#3d86c4', m4(0, 0.085, 0)],
+				// 壺嘴往前斜上，把手在後面
+				[cyl(0.018, 0.026, 0.22, 8), '#3d86c4', m4(0, 0.05, 0.15, 0.95, 0, 0)],
+				[cyl(0.032, 0.02, 0.03, 8), '#3d86c4', m4(0, 0.13, 0.24, 0.95, 0, 0)],
+				[new THREE.TorusGeometry(0.06, 0.014, 6, 12, Math.PI), '#3d86c4', m4(0, 0.09, -0.07, 0, Math.PI / 2, 0)]
+			])
+		)
+	);
+	const spout = new THREE.Object3D();
+	spout.position.set(0, 0.14, 0.26);
+	can.add(spout);
+	can.visible = false;
+	if (armR) {
+		can.position.set(0, -0.36, 0.05);
+		armR.add(can);
+	} else {
+		can.position.set(0.12, 0.26, 0.3);
+		body.add(can);
+	}
+
 	// 每位管理員的動作節奏錯開，看起來才不會像同一支動畫複製貼上
 	const phase = seed * 1.7;
 	let blinkAt = 1 + (seed % 3);
@@ -206,27 +250,44 @@ export function buildKeeper(kind: Keeper, variant: number, mat: THREE.Material, 
 	let headRoll = 0;
 	let sit = 0;
 
+	let walkAmt = 0;
+	let waterAmt = 0;
+
 	return {
 		root,
 		headTop,
+		spout,
 		update(t, dt, s) {
 			// 醒著：輪流看螢幕跟看鏡頭；睡著：頭垂下來、身體慢慢呼吸
+			// Claude 在做事：一直盯著螢幕；做完在等你：轉過來看鏡頭；走路、澆水：看前面
 			if (t > lookUntil) {
 				lookTarget = lookTarget === 0 ? s.lookAt : 0;
 				lookUntil = t + 2.5 + ((seed * 7 + t) % 3);
 			}
-			sit = damp(sit, s.asleep ? 1 : 0, 3, dt);
-			headYaw = damp(headYaw, s.asleep ? 0 : lookTarget, 5, dt);
-			headPitch = damp(headPitch, s.asleep ? 0.5 : Math.sin(t * 1.3 + phase) * 0.06, 3, dt);
-			headRoll = damp(headRoll, s.asleep ? 0.28 : Math.sin(t * 0.9 + phase) * 0.05, 3, dt);
+			const away = s.walk > 0.01 || s.carry;
+			const look = away ? 0 : s.busy === 'working' ? s.lookAt : s.busy === 'waiting' ? 0 : lookTarget;
+			const asleep = s.asleep && !away;
+			sit = damp(sit, asleep ? 1 : 0, 3, dt);
+			walkAmt = damp(walkAmt, s.walk, 8, dt);
+			waterAmt = damp(waterAmt, s.water, 4, dt);
+			headYaw = damp(headYaw, asleep ? 0 : look, 5, dt);
+			const nod = s.busy === 'working' && !away ? Math.sin(t * 5 + phase) * 0.05 + 0.08 : s.busy === 'waiting' && !away ? -0.12 : Math.sin(t * 1.3 + phase) * 0.06;
+			headPitch = damp(headPitch, asleep ? 0.5 : nod + waterAmt * 0.3, 3, dt);
+			// 等你回覆的時候歪著頭
+			const tilt = s.busy === 'waiting' && !away ? 0.22 + Math.sin(t * 1.1 + phase) * 0.05 : Math.sin(t * 0.9 + phase) * 0.05;
+			headRoll = damp(headRoll, asleep ? 0.28 : tilt, 3, dt);
 			head.rotation.set(headPitch, headYaw, headRoll);
 
-			const breathe = s.asleep ? Math.sin(t * 1.4 + phase) * 0.025 : 0;
+			const breathe = asleep ? Math.sin(t * 1.4 + phase) * 0.025 : 0;
+			const stride = t * 11 + phase;
 			body.scale.set(1 + breathe * 0.5, 1 - sit * 0.06 + breathe, 1 + breathe * 0.5);
-			body.position.y = (1 - sit) * Math.abs(Math.sin(t * 2 + phase)) * 0.02;
+			body.position.y = (1 - sit) * Math.abs(Math.sin(t * 2 + phase)) * 0.02 * (1 - walkAmt) + walkAmt * Math.abs(Math.sin(stride)) * 0.07;
+			body.rotation.z = walkAmt * Math.sin(stride) * 0.1;
+			can.visible = s.carry;
+			if (!armR) can.rotation.x = waterAmt * 0.9;
 
 			// 被點到會開心地跳一下、轉一圈
-			if (s.jump < 0.7 && !s.asleep) {
+			if (s.jump < 0.7 && !asleep) {
 				const k = s.jump / 0.7;
 				root.position.y = Math.sin(k * Math.PI) * 0.35;
 				body.rotation.y = k * Math.PI * 2;
@@ -237,7 +298,7 @@ export function buildKeeper(kind: Keeper, variant: number, mat: THREE.Material, 
 
 			// 眨眼；睡著就一直閉著
 			let open = 1;
-			if (s.asleep) open = 0.12;
+			if (asleep) open = 0.12;
 			else if (t > blinkAt) {
 				open = 0.1;
 				if (t > blinkAt + 0.12) blinkAt = t + 2.5 + ((seed * 13 + t) % 2.5);
@@ -246,19 +307,26 @@ export function buildKeeper(kind: Keeper, variant: number, mat: THREE.Material, 
 
 			if (tail) {
 				const speed = kind === 'dog' ? 11 : 2.2;
-				const amp = s.asleep ? 0.05 : kind === 'dog' ? 0.6 : 0.35;
+				const amp = asleep ? 0.05 : kind === 'dog' ? (s.busy === 'waiting' ? 0.9 : 0.6) : 0.35;
 				tail.rotation.y = Math.sin(t * speed + phase) * amp;
 			}
 			if (armL && armR) {
-				// 看螢幕的時候在打字
-				const typing = !s.asleep && Math.abs(headYaw) > 0.3 ? 1 : 0;
-				armL.rotation.x = -typing * 0.9 + Math.sin(t * 16 + phase) * 0.12 * typing - sit * 0.2;
-				armR.rotation.x = -typing * 0.9 + Math.sin(t * 16 + phase + 1.6) * 0.12 * typing - sit * 0.2;
-				armL.rotation.z = -0.15 - sit * 0.1;
+				// 看螢幕的時候在打字；Claude 在做事時打得特別快
+				const typing = !asleep && !away && Math.abs(headYaw) > 0.3 ? 1 : 0;
+				const speed = s.busy === 'working' ? 26 : 16;
+				// 走路時兩手前後擺；拿著壺的右手往前伸，澆水時再抬高一點
+				const swing = Math.sin(stride) * 0.5 * walkAmt;
+				armL.rotation.x = -typing * 0.9 + Math.sin(t * speed + phase) * 0.12 * typing - sit * 0.2 + swing;
+				armR.rotation.x = s.carry ? -0.5 - waterAmt * 0.5 : -typing * 0.9 + Math.sin(t * speed + phase + 1.6) * 0.12 * typing - sit * 0.2 - swing;
+				// 等你回覆的時候舉起左手揮一揮
+				const wave = s.busy === 'waiting' && !away ? 1 : 0;
+				armL.rotation.z = -0.15 - sit * 0.1 - wave * (2.3 + Math.sin(t * 6 + phase) * 0.3);
 				armR.rotation.z = 0.15 + sit * 0.1;
+				can.rotation.x = s.carry ? 0.5 + waterAmt * 0.9 : 0;
 			}
 			if (lamp && lampMat) {
-				lampMat.color.set(s.asleep ? '#3a3f55' : Math.sin(t * 3 + phase) > 0.6 ? '#ffffff' : '#46e39a');
+				const blink = s.busy === 'working' ? Math.sin(t * 12 + phase) > 0 : Math.sin(t * 3 + phase) > 0.6;
+				lampMat.color.set(asleep ? '#3a3f55' : blink ? '#ffffff' : s.busy === 'working' ? '#ff9a4d' : '#46e39a');
 			}
 		},
 		dispose() {

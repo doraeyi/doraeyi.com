@@ -13,10 +13,10 @@
 	import QrCard from '#lib/components/QrCard.svelte';
 	import RoomCard from '#lib/components/RoomCard.svelte';
 	import { ROOMS, timeAgo } from '#lib/format.js';
-	import { buildWorld, domainOf } from '#lib/room/world.js';
+	import { buildWorld, domainOf, keeperName } from '#lib/room/world.js';
 	import type { Focus } from '#lib/room/protocol.js';
 	import type { SceneMode } from '#lib/room/stats.svelte.js';
-	import type { Host } from '#lib/types.js';
+	import type { Host, LiveData } from '#lib/types.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -47,6 +47,48 @@
 	let near = $state<string | null>(null);
 	const nearProject = $derived(walk && near ? (data.projects.find((p) => p.key === near) ?? null) : null);
 
+	/** 管理員現在在做什麼：Claude 正在改哪些專案、最近的 push。頁面本身有快取，這個另外每 15 秒問一次 */
+	let live = $state<LiveData | null>(null);
+	const working = $derived(Object.values(live?.desks ?? {}).filter((s) => s === 'working').length);
+	/** 有新的 push：管理員跑去花園澆水，上面跳一行字說明 */
+	let toast = $state<string | null>(null);
+	let toastSeen = -1;
+	$effect(() => {
+		let alive = true;
+		let toastTimer: ReturnType<typeof setTimeout> | undefined;
+		const poll = async () => {
+			if (document.hidden) return;
+			try {
+				const res = await fetch('/api/live');
+				if (!res.ok || !alive) return;
+				const next = (await res.json()) as LiveData;
+				// 跟場景同一套規則：剛打開時只提五分鐘內的 push
+				const fresh = next.pushes.filter((p) => p.id > toastSeen && (toastSeen >= 0 || next.at - p.at < 5 * 60 * 1000)).at(-1);
+				toastSeen = Math.max(toastSeen, 0, ...next.pushes.map((p) => p.id));
+				if (fresh) {
+					const project = data.projects.find((p) => p.key === fresh.key);
+					const who = project ? keeperName(project.key, project.keeper) : '管理員';
+					toast = `${fresh.repo.split('/')[1]} 剛推了 ${fresh.commits} 個 commit，${who}去花園幫今天的樹澆水`;
+					clearTimeout(toastTimer);
+					toastTimer = setTimeout(() => (toast = null), 9000);
+				}
+				live = next;
+			} catch {
+				/* 下一輪再問 */
+			}
+		};
+		void poll();
+		const timer = setInterval(poll, 15_000);
+		const onVisible = () => void (!document.hidden && poll());
+		document.addEventListener('visibilitychange', onVisible);
+		return () => {
+			alive = false;
+			clearInterval(timer);
+			clearTimeout(toastTimer);
+			document.removeEventListener('visibilitychange', onVisible);
+		};
+	});
+
 	const selected = $derived(data.projects.find((p) => p.key === view) ?? null);
 	const roomView = $derived<Host | null>(view === 'vercel' ? 'vercel' : view === 'vm' ? 'vm' : null);
 	const stageFocus = $derived<Focus>(view === 'about' ? 'all' : view);
@@ -55,7 +97,7 @@
 	const portrait = () => innerWidth / innerHeight < 0.9;
 
 	$effect(() => {
-		// 直式手機放不下兩間房間，一開始先看 Vercel 房
+		// 直式手機放不下兩間房間，一開始先看左邊那間
 		if (portrait()) view = 'vercel';
 		const t = setTimeout(() => (hint = false), 7000);
 		return () => clearTimeout(t);
@@ -241,6 +283,7 @@
 		{qr}
 		{onqr}
 		{walk}
+		{live}
 		onnear={(key) => (near = key)}
 		onselect={select}
 		onmode={(m) => (mode = m)}
@@ -255,6 +298,7 @@
 	</button>
 	<ul class="chips" aria-label="即時狀態">
 		<li><i class="dot up"></i>{awake} 位值班中</li>
+		{#if working}<li class="busy"><i class="dot busy"></i>{working} 位正在改程式</li>{/if}
 		{#if asleep}
 			<li class="warn">
 				<button onclick={visitSleeper} title="看睡著的是哪個專案"><i class="dot down"></i>{asleep} 位睡著了</button>
@@ -264,6 +308,8 @@
 		<li class="hide-sm">下次巡房 {nextPatrol}</li>
 	</ul>
 </header>
+
+{#if toast && !qr}<p class="toast" role="status">{toast}</p>{/if}
 
 {#if mode !== 'list' && !qr && pull > 0.05}
 	<p class="pull" style:--p={Math.min(1, pull)}>繼續往下拉，變出 GitHub QR code<i></i></p>
@@ -286,8 +332,8 @@
 <!-- 下方：切換停靠點 -->
 <nav class="dock" aria-label="切換視角">
 	<button class:on={view === 'all' && !qr && !walk} onclick={() => ((view = 'all'), (panel = false), (qr = false), (walk = false))}>全景</button>
-	<button class:on={view === 'vercel' && !qr && !walk} onclick={() => open('vercel')}><i aria-hidden="true">▲ </i>Vercel <small>{byHost('vercel').length}</small></button>
-	<button class:on={view === 'vm' && !qr && !walk} onclick={() => open('vm')}><i aria-hidden="true">▤ </i>VM <small>{byHost('vm').length}</small></button>
+	<button class:on={view === 'vercel' && !qr && !walk} onclick={() => open('vercel')}>{ROOMS.vercel.name} <small>{byHost('vercel').length}</small></button>
+	<button class:on={view === 'vm' && !qr && !walk} onclick={() => open('vm')}>{ROOMS.vm.name} <small>{byHost('vm').length}</small></button>
 	{#if data.github}<button class:on={view === 'github' && !qr && !walk} onclick={() => open('github')}>GitHub</button>{/if}
 	<button class:on={view === 'about' && !qr && !walk} onclick={() => open('about')}>關於我</button>
 	<button class:on={qr} onclick={() => ((qr = !qr), (panel = false), (walk = false))} aria-pressed={qr}>QR</button>
@@ -304,7 +350,7 @@
 			<button class="close" onclick={close} aria-label="關閉">✕</button>
 
 			{#if selected}
-				<ProjectCard project={selected} />
+				<ProjectCard project={selected} busy={live?.desks[selected.key] ?? null} />
 			{:else if roomView}
 				<RoomCard host={roomView} projects={byHost(roomView)} onselect={select} />
 			{:else if view === 'github' && data.github}
@@ -444,6 +490,28 @@
 		background: none;
 	}
 
+	.toast {
+		position: fixed;
+		left: 50%;
+		top: 76px;
+		z-index: 10;
+		translate: -50% 0;
+		max-width: calc(100vw - 32px);
+		margin: 0;
+		padding: 8px 16px;
+		border: 1px solid rgb(120 200 255 / 0.35);
+		border-radius: var(--r-pill);
+		background: rgb(14 14 22 / 0.78);
+		backdrop-filter: blur(10px);
+		color: #bfe6ff;
+		font-size: 13px;
+		pointer-events: none;
+		animation: hintIn 0.5s var(--ease) both;
+	}
+	.chips li.busy {
+		color: #ffc79e;
+		border-color: rgb(255 154 77 / 0.35);
+	}
 	.hint {
 		position: fixed;
 		left: 50%;
@@ -605,10 +673,6 @@
 	.dock small {
 		opacity: 0.6;
 		font-weight: 500;
-	}
-	.dock i {
-		margin-right: 5px;
-		font-style: normal;
 	}
 
 	/* ---------- 資訊卡 ---------- */
@@ -873,7 +937,6 @@
 			padding: 9px 6px;
 			font-size: 13px;
 		}
-		.dock i,
 		.dock small {
 			display: none;
 		}

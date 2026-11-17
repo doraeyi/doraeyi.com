@@ -1,5 +1,6 @@
 // 主執行緒 ↔ Worker 之間的訊息格式
 
+import type { LiveData } from '#lib/types.js';
 import type { World } from './world.js';
 
 /** 鏡頭停靠點：全景、兩間房間、GitHub 地毯，或某一張桌子的 key */
@@ -39,7 +40,9 @@ export type ToScene =
 	/** 走路的方向：x 往右、z 往前，長度 1 是全速；run 是按著 Shift */
 	| { type: 'move'; x: number; z: number; run: boolean }
 	/** 按 E：看眼前那台電腦 */
-	| { type: 'interact' };
+	| { type: 'interact' }
+	/** 即時狀態：Claude 在做哪些專案、最近的 push */
+	| { type: 'live'; live: LiveData };
 
 export interface SceneStats {
 	fps: number;

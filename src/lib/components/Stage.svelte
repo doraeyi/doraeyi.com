@@ -8,6 +8,7 @@
 	import { sceneInfo, type SceneMode } from '#lib/room/stats.svelte.js';
 	import type { Focus, FromScene, SceneOptions, Tier, ToScene } from '#lib/room/protocol.js';
 	import type { World } from '#lib/room/world.js';
+	import type { LiveData } from '#lib/types.js';
 
 	interface Props {
 		world: World;
@@ -23,8 +24,10 @@
 		walk: boolean;
 		/** 走進去時眼前正對著哪張桌子 */
 		onnear: (key: string | null) => void;
+		/** 即時狀態：Claude 在做哪些專案、最近的 push */
+		live: LiveData | null;
 	}
-	let { world, focus, panel, qr, onselect, onqr, onmode, walk, onnear }: Props = $props();
+	let { world, focus, panel, qr, onselect, onqr, onmode, walk, onnear, live }: Props = $props();
 
 	let canvas = $state<HTMLCanvasElement>();
 	let ready = $state(false);
@@ -65,6 +68,9 @@
 	});
 	$effect(() => {
 		if (ready) send({ type: 'qr', on: qr });
+	});
+	$effect(() => {
+		if (ready && live) send({ type: 'live', live: $state.snapshot(live) as LiveData });
 	});
 	$effect(() => {
 		if (ready) send({ type: 'walk', on: walk });

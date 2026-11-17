@@ -90,6 +90,12 @@ a {
 	background: #46e39a;
 	box-shadow: 0 0 10px #46e39a;
 }
+/* Claude 正在改這個專案 */
+.dot.busy {
+	background: #ff9a4d;
+	box-shadow: 0 0 10px #ff9a4d;
+	animation: pulse 0.9s ease-in-out infinite;
+}
 .dot.down {
 	background: #ff5d7a;
 	box-shadow: 0 0 10px #ff5d7a;

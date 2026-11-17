@@ -29,5 +29,7 @@ export function dispatch(r: RoomHandle, msg: Exclude<ToScene, { type: 'init' }>)
 			return r.walkMove(msg.x, msg.z, msg.run);
 		case 'interact':
 			return r.interact();
+		case 'live':
+			return r.setLive(msg.live);
 	}
 }

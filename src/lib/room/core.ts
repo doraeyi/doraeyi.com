@@ -2,14 +2,15 @@
 //
 // 效能重點：
 //   靜態的牆、地板、桌子全部合成一個 mesh；管理員每個部位一個 mesh、共用同一個頂點色材質
-//   提交地毯 365 根柱子用 InstancedMesh，一次畫完；假陰影也是 InstancedMesh
+//   提交果園 365 棵樹（樹幹、樹冠）各一個 InstancedMesh，一次畫完；假陰影也是 InstancedMesh
 //   tier 2 才開即時陰影；太卡時主執行緒會叫這裡降到 tier 1
 
 import * as THREE from 'three';
 import { bake, box, buildKeeper, cone, cyl, m4, sphere, type KeeperRig, type Part } from './keepers.js';
 import type { Focus, FromScene, SceneOptions, SceneStats, Tier } from './protocol.js';
 import { addDetail, PATTERN } from './detail.js';
-import { blobTexture, carpetLabelTexture, nameTexture, screenTexture, shotTexture, signTexture, toonRamp, windowTexture, zTexture } from './textures.js';
+import type { DeskState, LiveData } from '#lib/types.js';
+import { blobTexture, bubbleTexture, carpetLabelTexture, codeTexture, nameTexture, screenTexture, shotTexture, toonRamp, windowTexture, zTexture } from './textures.js';
 import type { Desk, Room, World } from './world.js';
 
 const CELL_X = 2.7;
@@ -17,6 +18,13 @@ const CELL_Z = 2.5;
 const WALL_H = 2.8;
 const GAP = 2.4;
 const BAR = 0.26;
+/** 管理員坐在桌子右前方（桌子的座標系） */
+const SEAT = new THREE.Vector3(0.98, 0.05, 0.12);
+const SEAT_YAW = -0.65;
+/** 去花園澆水的走路速度（公尺／秒） */
+const WALK_SPEED = 1.5;
+/** 站在樹旁邊澆多久（秒） */
+const WATER_SECS = 3.4;
 
 const raf: (cb: (t: number) => void) => number =
 	typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (cb) => setTimeout(() => cb(performance.now()), 16) as unknown as number;
@@ -49,7 +57,7 @@ const BUSH = '#6b9a5c';
 // 變成 QR 時，房子淡成這個顏色的紙，當 QR 的淺色底
 const PAPER = '#f3eee6';
 
-// 提交花圃：剛冒芽的淡綠 → 越多越綠越高，跟 GitHub 的綠色格子同一個意思
+// 提交果園：剛冒芽的淡綠 → 越多越綠越高，跟 GitHub 的綠色格子同一個意思
 const LEVEL_COLORS = ['#b9c79d', '#93c46f', '#62a650', '#3e8744', '#2a6633'].map((c) => new THREE.Color(c));
 
 interface DeskView {
@@ -63,6 +71,35 @@ interface DeskView {
 	zzz: { sprite: THREE.Sprite; mat: THREE.SpriteMaterial; offset: number }[];
 	jumpAt: number;
 	pops: THREE.Object3D[];
+	/** 管理員整組（去花園時搬出去），在桌子的座標系裡 */
+	carrier: THREE.Group;
+	/** Claude 的狀態 */
+	busy: DeskState | null;
+	/** Claude 在做事時蓋在螢幕上的程式碼 */
+	code: THREE.Mesh;
+	bubble: THREE.Sprite;
+	bubbleMat: THREE.SpriteMaterial;
+	bubbleY: number;
+	/** 正在去花園澆水的路上（null = 在位子上） */
+	trip: Trip | null;
+	/** 從座位走到玄關自動門內側的路線（世界座標）：走道 → 房間側門 → 玄關 → 門口 */
+	exit: THREE.Vector3[];
+}
+
+/** 去花園澆今天那棵樹：沿著 path（世界座標）走過去、澆水、原路走回來 */
+interface Trip {
+	path: THREE.Vector3[];
+	/** 每一段的長度、全長 */
+	lens: number[];
+	total: number;
+	phase: 'go' | 'water' | 'back';
+	/** 走了多遠／澆了幾秒 */
+	d: number;
+	/** 這次 push 了幾個 commit，樹會長大這麼多 */
+	commits: number;
+	/** 樹已經長大過了（再收到 push 就直接再長一次） */
+	grown: boolean;
+	yaw: number;
 }
 
 interface RoomView {
@@ -113,6 +150,17 @@ export function createRoom(
 	const eyeGlow = keep(new THREE.MeshBasicMaterial({ color: '#6ff3ff' }));
 	const eyeDim = keep(new THREE.MeshBasicMaterial({ color: '#3a4766' }));
 	const zTex = keep(zTexture());
+	const bubbleTex = [0, 1, 2].map((f) => keep(bubbleTexture('working', f)));
+	const doneTex = keep(bubbleTexture('done'));
+	const codeTex = keep(codeTexture());
+	codeTex.repeat.set(1, 0.62);
+	const codeMat = keep(new THREE.MeshBasicMaterial({ map: codeTex }));
+	// 落地玻璃、自動門的玻璃：淡淡的藍，看得到裡面；變成 QR 時整片收掉，鋁框才不會在 QR 上畫出線
+	const glassMat = keep(
+		new THREE.MeshBasicMaterial({ color: '#d9f1ff', transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide })
+	);
+	const glassParts: THREE.Object3D[] = [];
+	const ALU = '#aeb6bf';
 
 	// ---- 燈光：白天亮、晚上換成月光 + 房間裡的暖燈 ----
 	const night = world.night;
@@ -129,7 +177,7 @@ export function createRoom(
 
 	// ---- 版面：一棟有後花園的小工作室 ----
 	// 後排是一棟房子：左邊 Vercel 工作室、右邊 VM 機房、中間玄關，整棟墊高一階；
-	// 房子前面一條木頭露台，再往前是碎石鋪的後花園，種著一叢叢草叢，中間一塊提交花圃，外圈一圈矮籬。
+	// 房子前面一條木頭露台，再往前是碎石鋪的後花園，種著一叢叢草叢，中間一片提交果園，外圈一圈矮籬。
 	// 整塊地切成 QR code 的格子：變身時屋頂蓋回去、草叢長密，
 	// 從正上方看，屋頂的深淺屋瓦加上花園裡的草叢，剛好拼成 GitHub 的 QR code
 	const size = (n: number) => {
@@ -288,12 +336,6 @@ export function createRoom(
 		];
 		// 機房天花板上的線槽掛在後牆上
 		if (kind === 'vm') parts.push([box(w - 0.4, 0.08, 0.3), '#56d4ff', m4(0, WALL_H - 0.15, -d / 2 + 0.5)]);
-		const sign = new THREE.Mesh(
-			keep(new THREE.PlaneGeometry(2.6, 0.81)),
-			keep(new THREE.MeshBasicMaterial({ map: keep(signTexture(rv.room.label, rv.room.sub, kind)), transparent: true }))
-		);
-		sign.position.set(0, WALL_H - 0.75, -d / 2 + T + 0.005);
-		group.add(sign);
 		const win = new THREE.Mesh(keep(new THREE.PlaneGeometry(1.1, 0.9)), keep(new THREE.MeshBasicMaterial({ map: keep(windowTexture(night)) })));
 		win.position.set(sideX + inward * 0.115, 1.65, winZ);
 		win.rotation.y = inward * (Math.PI / 2);
@@ -344,6 +386,24 @@ export function createRoom(
 		}
 		group.add(mesh(bake(parts)));
 
+		// 房間跟花園之間一整片落地玻璃，從外面看得到裡面；要出去得走側門、從玄關的自動門出去
+		{
+			const gz = d / 2 - 0.13;
+			const gw = w - 2 * T;
+			const pane = new THREE.Mesh(keep(new THREE.PlaneGeometry(gw, WALL_H)), glassMat);
+			pane.position.set(0, WALL_H / 2, gz);
+			const n = Math.max(2, Math.round(gw / 1.3));
+			const frame: Part[] = [
+				[box(gw, 0.07, 0.08), ALU, m4(0, 0.035, gz)],
+				[box(gw, 0.07, 0.08), ALU, m4(0, WALL_H - 0.035, gz)]
+			];
+			for (let i = 1; i < n; i++) frame.push([box(0.05, WALL_H, 0.07), ALU, m4(-gw / 2 + (gw * i) / n, WALL_H / 2, gz)]);
+			const frameMesh = mesh(bake(frame));
+			group.add(pane, frameMesh);
+			glassParts.push(pane, frameMesh);
+			block(rv.x - w / 2, rv.z + gz - 0.1, rv.x + w / 2, rv.z + gz + 0.1);
+		}
+
 		// 晚上每間房間點一盞暖燈
 		if (night) {
 			const lamp = nightLight(new THREE.PointLight(kind === 'vm' ? '#9fdcff' : '#ffcf8a', 10, 10, 1.6));
@@ -384,6 +444,13 @@ export function createRoom(
 			screen.rotation.y = 0.25;
 			deskGroup.add(screen);
 			if (desk.shot && !desk.asleep) shotQueue.push([desk, screenMat]);
+			// Claude 在做事時，螢幕換成一直往上捲的程式碼
+			const code = new THREE.Mesh(screen.geometry, codeMat);
+			code.position.copy(screen.position);
+			code.rotation.copy(screen.rotation);
+			code.translateZ(0.003);
+			code.visible = false;
+			deskGroup.add(code);
 
 			// 桌角的警示燈：掛掉時會閃紅光
 			const alarm = keep(new THREE.MeshBasicMaterial({ color: '#3a3f55' }));
@@ -402,9 +469,19 @@ export function createRoom(
 			const seed = ri * 10 + i;
 			const variant = Math.floor(i / 3) + ri;
 			const rig = buildKeeper(desk.keeper, variant, toon, desk.keeper === 'robot' ? (desk.asleep ? eyeDim : eyeGlow) : eyeDark, seed);
-			rig.root.position.set(0.98, 0.05, 0.12);
-			rig.root.rotation.y = -0.65;
-			deskGroup.add(rig.root);
+			const carrier = new THREE.Group();
+			carrier.position.copy(SEAT);
+			carrier.rotation.y = SEAT_YAW;
+			carrier.add(rig.root);
+			deskGroup.add(carrier);
+			// 頭上的對話泡泡：Claude 在做事是「…」，做完了在等你是打勾
+			const bubbleMat = keep(new THREE.SpriteMaterial({ map: bubbleTex[0], transparent: true, depthWrite: false }));
+			const bubble = new THREE.Sprite(bubbleMat);
+			const bubbleY = desk.keeper === 'robot' ? 1.62 : 1.3;
+			bubble.position.set(0, bubbleY, 0);
+			bubble.scale.set(0.42, 0.37, 1);
+			bubble.visible = false;
+			carrier.add(bubble);
 
 			const zzz = desk.asleep
 				? [0, 1, 2].map((k) => {
@@ -424,14 +501,54 @@ export function createRoom(
 			block(wx - 0.66, wz - 0.34, wx + 0.66, wz + 0.34);
 			block(wx + 0.78, wz - 0.1, wx + 1.18, wz + 0.36);
 
-			desks.push({ desk, x: wx, z: wz, rig, ring, ringMat, alarm, zzz, jumpAt: -10, pops: [deskGroup] });
+			// 出門：往右踏到兩排桌子中間的直走道，走到側門那條橫走道，穿過側門進玄關，再走到自動門前面
+			const floorY = PLINTH + SEAT.y;
+			const innerX = rv.x - sideX;
+			const toRoom = Math.sign(rv.x - innerX);
+			const aisleZ = rv.z + doorZ;
+			const lane = wx + 1.55;
+			const exit = [
+				new THREE.Vector3(wx + SEAT.x, floorY, wz + SEAT.z),
+				new THREE.Vector3(lane, floorY, wz + 0.3),
+				new THREE.Vector3(lane, floorY, aisleZ),
+				new THREE.Vector3(innerX + toRoom * 0.5, floorY, aisleZ),
+				new THREE.Vector3(innerX - toRoom * 0.5, floorY, aisleZ),
+				new THREE.Vector3(hallX, floorY, aisleZ),
+				new THREE.Vector3(hallX, floorY, front - 0.05)
+			];
+
+			desks.push({
+				desk,
+				exit,
+				x: wx,
+				z: wz,
+				rig,
+				ring,
+				ringMat,
+				alarm,
+				zzz,
+				jumpAt: -10,
+				pops: [deskGroup],
+				carrier,
+				busy: null,
+				code,
+				bubble,
+				bubbleMat,
+				bubbleY,
+				trip: null
+			});
 			pops.push([deskGroup, 0.45 + desks.length * 0.07]);
 		});
 
 		addHit(kind, rv.x, PLINTH + 0.05, rv.z, w, 0.1, d);
 	});
 
-	// ---- 玄關：兩間房間中間，門口上方掛名牌 ----
+	// ---- 玄關：兩間房間中間，門口上方掛名牌，名牌下面是玻璃自動門 ----
+	/** 自動門一扇的寬 */
+	const DOOR_LEAF = 0.62;
+	const leaves: [THREE.Group, number][] = [];
+	let sensorMat: THREE.MeshBasicMaterial | null = null;
+	let doorOpen = 0;
 	{
 		const fw = foyer.x1 - foyer.x0;
 		const g = new THREE.Group();
@@ -468,6 +585,54 @@ export function createRoom(
 		addBlob(hallX - potX, back + buildD - 0.45, 0.7, PLINTH + 0.06);
 		addBlob(hallX + potX, back + buildD - 0.45, 0.7, PLINTH + 0.06);
 		for (const s of [-1, 1]) block(hallX + s * potX - 0.25, back + buildD - 0.8, hallX + s * potX + 0.25, back + buildD - 0.25);
+
+		// 門口：便利商店那種玻璃自動門，名牌正下方兩扇往兩邊滑開，旁邊是固定的玻璃
+		const dz = fz - T / 2;
+		const doorH = WALL_H - 0.6;
+		const side = fw / 2 - DOOR_LEAF;
+		const fixed: Part[] = [[box(0.62, 0.1, 0.14), '#2b2d3a', m4(0, doorH - 0.07, dz + 0.12)]];
+		for (const sx of [-1, 1]) {
+			const pane = new THREE.Mesh(keep(new THREE.PlaneGeometry(side, doorH)), glassMat);
+			pane.position.set(sx * (DOOR_LEAF + side / 2), doorH / 2, dz - 0.03);
+			g.add(pane);
+			glassParts.push(pane);
+			fixed.push(
+				[box(side, 0.07, 0.07), ALU, m4(sx * (DOOR_LEAF + side / 2), 0.035, dz - 0.03)],
+				[box(0.07, doorH, 0.08), ALU, m4(sx * DOOR_LEAF, doorH / 2, dz - 0.03)]
+			);
+			block(hallX + sx * DOOR_LEAF, front - 0.3, hallX + sx * fw / 2, front - 0.06);
+		}
+		const fixedMesh = mesh(bake(fixed));
+		g.add(fixedMesh);
+		glassParts.push(fixedMesh);
+		// 門上的感應器，有人靠近亮綠燈
+		sensorMat = keep(new THREE.MeshBasicMaterial({ color: '#3a3f55' }));
+		const sensor = new THREE.Mesh(keep(new THREE.BoxGeometry(0.16, 0.035, 0.02)), sensorMat);
+		sensor.position.set(0, doorH - 0.07, dz + 0.2);
+		g.add(sensor);
+		glassParts.push(sensor);
+		for (const sx of [-1, 1]) {
+			const leaf = new THREE.Group();
+			const pane = new THREE.Mesh(keep(new THREE.PlaneGeometry(DOOR_LEAF - 0.04, doorH - 0.08)), glassMat);
+			pane.position.y = doorH / 2;
+			leaf.add(
+				pane,
+				mesh(
+					bake([
+						[box(DOOR_LEAF, 0.08, 0.06), ALU, m4(0, 0.04, 0)],
+						[box(DOOR_LEAF, 0.06, 0.06), ALU, m4(0, doorH - 0.03, 0)],
+						[box(0.05, doorH, 0.06), ALU, m4((-sx * DOOR_LEAF) / 2, doorH / 2, 0)],
+						[box(0.05, doorH, 0.06), ALU, m4((sx * DOOR_LEAF) / 2, doorH / 2, 0)],
+						// 門中間的握把條
+						[box(0.03, 0.5, 0.05), '#7c858f', m4((-sx * DOOR_LEAF) / 2 + sx * 0.06, 1.05, 0.02)]
+					])
+				)
+			);
+			leaf.position.set((sx * DOOR_LEAF) / 2, 0, dz + 0.04);
+			g.add(leaf);
+			glassParts.push(leaf);
+			leaves.push([leaf, sx]);
+		}
 	}
 	// 晚上花園上空一盞暖燈，花園才不會整片灰灰的
 	if (night) {
@@ -476,9 +641,22 @@ export function createRoom(
 		scene.add(gardenLamp);
 	}
 
-	// ---- GitHub 提交花圃：一年 365 株，提交越多長越高、顏色越深 ----
-	let bars: THREE.InstancedMesh | null = null;
-	const barHeights: number[] = [];
+	// ---- GitHub 提交果園：一天一棵樹，提交越多長越高、樹冠越大越綠；沒提交的那天只有一小撮草 ----
+	// 最後一棵是今天：push 的時候管理員會走過來澆水，樹當場長大
+	let trunks: THREE.InstancedMesh | null = null;
+	let crowns: THREE.InstancedMesh | null = null;
+	const counts = [...world.commits];
+	const today = counts.length - 1;
+	// 拿今天以前最多的那天當滿分，今天多推幾次可以長得比以前都高（最多 1.4 倍）
+	const maxDay = Math.max(1, ...counts.slice(0, -1));
+	const treeH = (n: number) => (n === 0 ? 0 : 0.2 + Math.min(1.4, Math.sqrt(n / maxDay)) * 1.0);
+	const treeLevel = (n: number) => (n === 0 ? 0 : Math.min(4, 1 + Math.floor(Math.min(1, n / maxDay) * 3.999)));
+	/** 今天那棵樹長大的動畫：從 from 長到 to，at 是開始的時間 */
+	const grow = { from: 0, to: 0, at: -10 };
+	const treeSpot = (i: number) => {
+		const col = Math.floor(i / 7);
+		return new THREE.Vector3(carpet!.x - carpet!.w / 2 + 0.35 + (col + 0.5) * BAR, 0.12, carpet!.z - carpet!.d / 2 + 0.35 + ((i % 7) + 0.5) * BAR);
+	};
 	if (carpet) {
 		const fx = carpet.w / 2 + 0.05;
 		const fz = carpet.d / 2 + 0.05;
@@ -496,16 +674,18 @@ export function createRoom(
 		scene.add(base);
 		pops.push([base, 0.25]);
 
-		const max = Math.max(1, ...world.commits);
-		bars = new THREE.InstancedMesh(keep(new THREE.BoxGeometry(BAR * 0.82, 1, BAR * 0.82)), toonPlain(), world.commits.length);
-		bars.castShadow = true;
-		bars.receiveShadow = true;
-		world.commits.forEach((n, i) => {
-			const level = n === 0 ? 0 : Math.min(4, 1 + Math.floor((n / max) * 3.999));
-			barHeights.push(n === 0 ? 0.04 : 0.12 + Math.sqrt(n / max) * 1.1);
-			bars!.setColorAt(i, LEVEL_COLORS[level]);
+		trunks = new THREE.InstancedMesh(keep(new THREE.CylinderGeometry(0.5, 0.65, 1, 6).translate(0, 0.5, 0)), toonPlain(), counts.length);
+		trunks.castShadow = true;
+		// 樹冠是一顆二十面體（detail 0 的法線是一面一面的），卡通光影下像低多邊形的樹
+		crowns = new THREE.InstancedMesh(keep(new THREE.IcosahedronGeometry(0.5, 0)), toonPlain(), counts.length);
+		crowns.castShadow = true;
+		crowns.receiveShadow = true;
+		const bark = new THREE.Color('#8a6242');
+		counts.forEach((n, i) => {
+			trunks!.setColorAt(i, bark);
+			crowns!.setColorAt(i, LEVEL_COLORS[treeLevel(n)]);
 		});
-		scene.add(bars);
+		scene.add(trunks, crowns);
 		addHit('github', carpet.x, 0.3, carpet.z, carpet.w, 0.8, carpet.d);
 		block(carpet.x - fx - 0.05, carpet.z - fz - 0.05, carpet.x + fx + 0.05, carpet.z + fz + 0.05);
 
@@ -524,23 +704,222 @@ export function createRoom(
 		scene.add(label);
 		pops.push([label, 0.9]);
 	}
-	const barMatrix = new THREE.Matrix4();
-	const setBars = (time: number) => {
-		if (!bars || !carpet) return;
-		for (let i = 0; i < barHeights.length; i++) {
+	const treeMatrix = new THREE.Matrix4();
+	const treeQuat = new THREE.Quaternion();
+	const treeScale = new THREE.Vector3();
+	const UP = new THREE.Vector3(0, 1, 0);
+	/** 今天那棵樹現在的大小（澆水時從 grow.from 長到 grow.to） */
+	const todayH = (t: number) => {
+		const k = clamp((t - grow.at) / 1.6, 0, 1);
+		return k >= 1 ? treeH(counts[today]) : grow.from + (grow.to - grow.from) * popEase(k);
+	};
+	/** time：出場動畫的時間，一欄一欄由舊到新長出來；t：場景時間，今天那棵樹長大用 */
+	const setTrees = (time: number, t = 0) => {
+		if (!trunks || !crowns) return;
+		for (let i = 0; i < counts.length; i++) {
 			const col = Math.floor(i / 7);
 			const k = reduced ? 1 : popEase(clamp((time - 1.0 - col * 0.018) / 0.8, 0, 1));
-			const h = Math.max(0.001, barHeights[i] * k);
-			barMatrix.compose(
-				new THREE.Vector3(carpet.x - carpet.w / 2 + 0.35 + (col + 0.5) * BAR, 0.12 + h / 2, carpet.z - carpet.d / 2 + 0.35 + ((i % 7) + 0.5) * BAR),
-				new THREE.Quaternion(),
-				new THREE.Vector3(1, h, 1)
-			);
-			bars.setMatrixAt(i, barMatrix);
+			const spot = treeSpot(i);
+			treeQuat.setFromAxisAngle(UP, (i * 2.39) % (Math.PI * 2));
+			const h = (i === today ? todayH(t) : treeH(counts[i])) * k;
+			if (h === 0) {
+				// 沒提交的那天：地上一小撮草
+				treeMatrix.compose(spot.setY(0.14), treeQuat, treeScale.set(0.1 * k + 0.0001, 0.07 * k + 0.0001, 0.1 * k + 0.0001));
+				crowns.setMatrixAt(i, treeMatrix);
+				trunks.setMatrixAt(i, treeMatrix.makeScale(0, 0, 0));
+				continue;
+			}
+			const level = treeLevel(counts[i]);
+			const trunkH = h * 0.38;
+			const crownH = h * 0.78;
+			const dia = BAR * (0.72 + 0.14 * level) * Math.min(1, h / 0.5 + 0.4);
+			trunks.setMatrixAt(i, treeMatrix.compose(spot, treeQuat, treeScale.set(0.05, trunkH, 0.05)));
+			crowns.setMatrixAt(i, treeMatrix.compose(spot.setY(0.12 + trunkH + crownH * 0.42), treeQuat, treeScale.set(dia, crownH, dia)));
 		}
-		bars.instanceMatrix.needsUpdate = true;
+		trunks.instanceMatrix.needsUpdate = true;
+		crowns.instanceMatrix.needsUpdate = true;
 	};
-	setBars(reduced ? 99 : 0);
+	setTrees(reduced ? 99 : 0);
+	/** 今天那棵樹的樹冠頂端，水滴往這裡灑 */
+	const todayTop = (t: number) => treeSpot(today).setY(0.12 + todayH(t) * 1.1);
+	/** 澆完水樹長大：commits 是這次 push 了幾個 */
+	const growToday = (commits: number, t: number) => {
+		if (!crowns || today < 0) return;
+		grow.from = todayH(t);
+		counts[today] += commits;
+		grow.to = treeH(counts[today]);
+		grow.at = t;
+		crowns.setColorAt(today, LEVEL_COLORS[treeLevel(counts[today])]);
+		crowns.instanceColor!.needsUpdate = true;
+	};
+
+	// ---- 管理員去花園澆水 ----
+	// 房子裡照固定路線走（DeskView.exit）：走道 → 房間側門 → 玄關 → 自動門。
+	// 出了門就在 QR 的格子上找路（BFS），繞過草叢跟花圃，走到今天那棵樹的旁邊
+	const V = THREE.Vector3;
+	const groundY = (z: number) => (z < front ? PLINTH + SEAT.y : z < deckFront ? 0.1 : 0.05);
+	const cellFree = (r: number, c: number) => {
+		if (r < buildRows || r >= gridN || c < 0 || c >= gridN) return false;
+		const x = -S / 2 + (c + 0.5) * C;
+		const z = back + (r + 0.5) * C;
+		return !blocks.some(([x0, z0, x1, z1]) => x > x0 - 0.05 && x < x1 + 0.05 && z > z0 - 0.05 && z < z1 + 0.05);
+	};
+	function tripPath(dv: DeskView): THREE.Vector3[] {
+		const spot = treeSpot(today);
+		const stand = new V(carpet!.x + carpet!.w / 2 + 0.38, 0.05, spot.z);
+		const indoor = dv.exit;
+
+		// 起點：自動門外面第一排格子裡最近的空格；終點：離站的位置最近的空格
+		const cellOf = (x: number, z: number) => [Math.floor((z - back) / C), Math.floor((x + S / 2) / C)] as const;
+		const nearestFree = (x: number, z: number) => {
+			const [r0, c0] = cellOf(x, z);
+			for (let rad = 0; rad < 4; rad++)
+				for (let dr = -rad; dr <= rad; dr++)
+					for (let dc = -rad; dc <= rad; dc++)
+						if (Math.max(Math.abs(dr), Math.abs(dc)) === rad && cellFree(r0 + dr, c0 + dc)) return [r0 + dr, c0 + dc] as const;
+			return null;
+		};
+		const from = nearestFree(hallX, front + C / 2);
+		const to = nearestFree(stand.x, stand.z);
+		const route: THREE.Vector3[] = [];
+		if (from && to) {
+			const id = (r: number, c: number) => r * gridN + c;
+			const goal = id(...to);
+			const prev = new Map<number, number>([[id(...from), -1]]);
+			const queue = [id(...from)];
+			for (let i = 0; i < queue.length && !prev.has(goal); i++) {
+				const r = Math.floor(queue[i] / gridN);
+				const c = queue[i] % gridN;
+				for (const [nr, nc] of [
+					[r + 1, c],
+					[r - 1, c],
+					[r, c + 1],
+					[r, c - 1]
+				])
+					if (cellFree(nr, nc) && !prev.has(id(nr, nc))) {
+						prev.set(id(nr, nc), queue[i]);
+						queue.push(id(nr, nc));
+					}
+			}
+			for (let k = prev.has(goal) ? goal : -1; k >= 0; k = prev.get(k)!) {
+				const x = -S / 2 + ((k % gridN) + 0.5) * C;
+				const z = back + (Math.floor(k / gridN) + 0.5) * C;
+				route.unshift(new V(x, groundY(z), z));
+			}
+		}
+		// 一直線上中間的點拿掉，走起來才不會一格一格頓
+		return [...indoor, ...route, stand].filter((p, i, a) => {
+			if (i === 0 || i === a.length - 1) return true;
+			const u = p.clone().sub(a[i - 1]);
+			const w = a[i + 1].clone().sub(p);
+			return Math.abs(u.x * w.z - u.z * w.x) > 1e-4 || u.dot(w) < 0 || Math.abs(u.y) > 0.01;
+		});
+	}
+
+	function startTrip(dv: DeskView, commits: number, t: number) {
+		dv.jumpAt = t;
+		if (!carpet || today < 0 || reduced) {
+			// 沒有花圃（GitHub 抓不到）就跳一下；減少動態就不走過去，樹直接長大
+			if (carpet && today >= 0) growToday(commits, t);
+			return;
+		}
+		if (dv.trip) {
+			if (dv.trip.grown) growToday(commits, t);
+			else dv.trip.commits += commits;
+			return;
+		}
+		const path = tripPath(dv);
+		const lens = path.slice(1).map((p, i) => p.distanceTo(path[i]));
+		dv.trip = { path, lens, total: lens.reduce((a, b) => a + b, 0), phase: 'go', d: 0, commits, grown: false, yaw: SEAT_YAW };
+	}
+
+	const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+	const tripPos = new THREE.Vector3();
+	/** 往前走一幀；回傳管理員這一幀的動作，走回座位了回傳 null */
+	function stepTrip(dv: DeskView, t: number, dt: number) {
+		const tr = dv.trip!;
+		let face: number;
+		let water = 0;
+		if (tr.phase === 'water') {
+			tr.d += dt;
+			tripPos.copy(tr.path[tr.path.length - 1]);
+			const spot = treeSpot(today);
+			face = Math.atan2(spot.x - tripPos.x, spot.z - tripPos.z);
+			water = tr.d > 0.4 && tr.d < WATER_SECS - 0.5 ? 1 : 0;
+			if (!tr.grown && tr.d > 1.1) {
+				growToday(tr.commits, t);
+				tr.grown = true;
+			}
+			if (tr.d >= WATER_SECS) {
+				tr.phase = 'back';
+				tr.d = tr.total;
+			}
+		} else {
+			const dir = tr.phase === 'go' ? 1 : -1;
+			tr.d += dir * WALK_SPEED * dt;
+			if (tr.phase === 'go' && tr.d >= tr.total) {
+				tr.phase = 'water';
+				tr.d = 0;
+			} else if (tr.phase === 'back' && tr.d <= 0) {
+				dv.trip = null;
+				dv.carrier.position.copy(SEAT);
+				dv.carrier.rotation.y = SEAT_YAW;
+				return null;
+			}
+			// 找出現在走在哪一段上
+			let d = clamp(tr.d, 0, tr.total);
+			let i = 0;
+			while (i < tr.lens.length - 1 && d > tr.lens[i]) d -= tr.lens[i++];
+			const a = tr.path[i];
+			const b = tr.path[i + 1];
+			const k = tr.lens[i] ? clamp(d / tr.lens[i], 0, 1) : 1;
+			tripPos.lerpVectors(a, b, k);
+			// 上下台階的那一段跳一下
+			if (Math.abs(a.y - b.y) > 0.01) tripPos.y += Math.sin(Math.PI * k) * 0.14;
+			face = Math.atan2((b.x - a.x) * dir, (b.z - a.z) * dir);
+		}
+		tr.yaw += wrapAngle(face - tr.yaw) * (1 - Math.exp(-10 * dt));
+		dv.carrier.position.set(tripPos.x - dv.x, tripPos.y - PLINTH, tripPos.z - dv.z);
+		dv.carrier.rotation.y = tr.yaw;
+		return { walk: tr.phase === 'water' ? 0 : 1, water };
+	}
+
+	// 澆水的水滴：最多兩位管理員同時澆，一人 24 滴
+	const DROPS = 24;
+	const dropMesh = new THREE.InstancedMesh(
+		keep(new THREE.SphereGeometry(0.022, 6, 4)),
+		keep(new THREE.MeshBasicMaterial({ color: '#8fd3ff', transparent: true, opacity: 0.85 })),
+		DROPS * 2
+	);
+	dropMesh.frustumCulled = false;
+	dropMesh.visible = false;
+	scene.add(dropMesh);
+	const spoutPos = new THREE.Vector3();
+	const dropPos = new THREE.Vector3();
+	const dropM = new THREE.Matrix4();
+	const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
+	function setDrops(t: number) {
+		let slot = 0;
+		for (const dv of desks) {
+			const tr = dv.trip;
+			if (slot >= 2 || tr?.phase !== 'water' || tr.d < 0.5 || tr.d > WATER_SECS - 0.5) continue;
+			dv.rig.spout.getWorldPosition(spoutPos);
+			const top = todayTop(t);
+			for (let j = 0; j < DROPS; j++) {
+				const p = (t * 1.6 + j / DROPS) % 1;
+				const spread = ((j * 7) % 5) / 5 - 0.4;
+				dropPos.lerpVectors(spoutPos, top, p);
+				dropPos.y += Math.sin(Math.PI * p) * 0.12;
+				dropPos.x += spread * 0.06 * p;
+				dropPos.z += spread * 0.05 * p;
+				dropMesh.setMatrixAt(slot * DROPS + j, dropM.makeTranslation(dropPos.x, dropPos.y, dropPos.z));
+			}
+			slot++;
+		}
+		for (let j = slot * DROPS; j < DROPS * 2; j++) dropMesh.setMatrixAt(j, ZERO);
+		dropMesh.visible = slot > 0;
+		if (slot) dropMesh.instanceMatrix.needsUpdate = true;
+	}
 
 	// ---- 機櫃上的燈 ----
 	let ledMesh: THREE.InstancedMesh | null = null;
@@ -1319,6 +1698,16 @@ export function createRoom(
 	const start = last;
 	let introDone = reduced;
 	let ledTimer = 0;
+	/** 演過的 push 裡最大的 id；-1 是還沒收過即時狀態 */
+	let seenPush = -1;
+	/** push 對到哪位管理員：網站上有那個專案就是它，沒有就依 repo 名稱固定挑一位 */
+	function deskForPush(key: string | null, repo: string) {
+		const hit = key ? desks.find((d) => d.desk.key === key) : undefined;
+		if (hit || !desks.length) return hit ?? null;
+		let h = 0;
+		for (const ch of repo) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+		return desks[h % desks.length];
+	}
 	let frames = 0;
 	let loops = 0;
 	let worst = 0;
@@ -1345,7 +1734,7 @@ export function createRoom(
 				if (k < 1) all = false;
 			}
 			blobMat.opacity = clamp((t - lastPop) / 0.75, 0, 1);
-			setBars(t);
+			setTrees(t);
 			if (all && t > 1.0 + weeks * 0.018 + 0.8) finishIntro();
 		}
 
@@ -1406,12 +1795,34 @@ export function createRoom(
 		wash.visible = washMat.opacity > 0.005;
 		applyCamera(t, off < 0.008 ? lockAge : -1);
 
+		// 今天那棵樹正在長大
+		if (t - grow.at < 1.7) setTrees(99, t);
+		// Claude 在做事的螢幕：程式碼一直往上捲
+		codeTex.offset.y = (-t * 0.08) % 1;
+
 		// 管理員
 		for (const dv of desks) {
-			dv.rig.update(t, dt, { asleep: dv.desk.asleep, jump: t - dv.jumpAt, lookAt: -0.95 });
+			const act = dv.trip && introDone ? stepTrip(dv, t, dt) : null;
+			dv.rig.update(t, dt, {
+				asleep: dv.desk.asleep,
+				jump: t - dv.jumpAt,
+				lookAt: -0.95,
+				busy: dv.busy,
+				walk: act?.walk ?? 0,
+				carry: dv.trip !== null,
+				water: act?.water ?? 0
+			});
+			dv.code.visible = dv.busy === 'working';
+			// 泡泡：在位子上才冒，一上一下輕輕飄
+			dv.bubble.visible = dv.busy !== null && !dv.trip;
+			if (dv.bubble.visible) {
+				dv.bubbleMat.map = dv.busy === 'working' ? bubbleTex[Math.floor(t * 3) % 3] : doneTex;
+				dv.bubble.position.y = dv.bubbleY + Math.sin(t * 2.2 + dv.x) * 0.03;
+			}
 			const on = dv.desk.key === selected ? 0.95 : dv.desk.key === hovered ? 0.55 : 0;
 			dv.ringMat.opacity = damp(dv.ringMat.opacity, on, 10, dt);
 			dv.ring.visible = dv.ringMat.opacity > 0.01;
+			for (const z of dv.zzz) z.sprite.visible = !dv.trip;
 			if (dv.desk.asleep) {
 				dv.alarm.color.setRGB(0.4 + 0.6 * Math.max(0, Math.sin(t * 4)), 0.1, 0.15);
 				// Zzz 從頭頂往上飄、慢慢變大、淡出
@@ -1424,6 +1835,21 @@ export function createRoom(
 			} else {
 				dv.alarm.color.set(dv.desk.unchecked ? '#3a3f55' : '#2fbf7c');
 			}
+		}
+
+		setDrops(t);
+
+		// 自動門：管理員或走進去的自己靠近門口就打開，走遠了慢慢關上
+		{
+			const doorZ = front - 0.2;
+			let someone = walkOn && Math.hypot(me.x - hallX, me.z - doorZ) < 1.8;
+			for (const dv of desks)
+				if (dv.trip && Math.hypot(dv.carrier.position.x + dv.x - hallX, dv.carrier.position.z + dv.z - doorZ) < 1.6) someone = true;
+			doorOpen = damp(doorOpen, someone ? 1 : 0, someone ? 7 : 2.5, dt);
+			for (const [leaf, sx] of leaves) leaf.position.x = sx * (DOOR_LEAF / 2 + doorOpen * DOOR_LEAF * 0.92);
+			sensorMat?.color.set(someone ? '#46e39a' : '#3a3f55');
+			const showGlass = q < 0.15;
+			for (const gp of glassParts) gp.visible = showGlass;
 		}
 
 		ledTimer += dt;
@@ -1465,7 +1891,7 @@ export function createRoom(
 	function finishIntro() {
 		for (const [obj] of pops) obj.scale.setScalar(1);
 		blobMat.opacity = 1;
-		setBars(99);
+		setTrees(99);
 		introDone = true;
 	}
 
@@ -1659,6 +2085,24 @@ export function createRoom(
 			if (!introDone) finishIntro();
 			if (on) setWalk(false);
 			toggleQr(on);
+		},
+		/** 即時狀態：Claude 在做哪些專案、有沒有新的 push */
+		setLive(live: LiveData) {
+			for (const dv of desks) dv.busy = live.desks[dv.desk.key] ?? null;
+			const t = (performance.now() - start) / 1000;
+			const first = seenPush < 0;
+			const went = new Set<DeskView>();
+			for (const p of live.pushes) {
+				if (p.id <= seenPush) continue;
+				seenPush = p.id;
+				// 剛打開網頁時只補演五分鐘內的 push，一位管理員走一趟就好
+				if (first && live.at - p.at > 5 * 60 * 1000) continue;
+				const dv = deskForPush(p.key, p.repo);
+				if (!dv || (first && went.has(dv))) continue;
+				went.add(dv);
+				startTrip(dv, p.commits, t);
+			}
+			if (first) seenPush = Math.max(seenPush, 0);
 		},
 		setTier(next: Tier) {
 			tier = next;
