@@ -963,13 +963,67 @@ export function createRoom(
 		leds.forEach((p, i) => ledMesh!.setMatrixAt(i, m4(p.x, p.y, p.z)));
 		scene.add(ledMesh);
 	}
-	const ledColors = [new THREE.Color('#46e39a'), new THREE.Color('#1c3a2c'), new THREE.Color('#ffc861')];
-	const blinkLeds = () => {
-		if (!ledMesh) return;
-		for (let i = 0; i < leds.length; i++) ledMesh.setColorAt(i, ledColors[Math.random() < 0.7 ? 0 : Math.random() < 0.8 ? 1 : 2]);
-		ledMesh.instanceColor!.needsUpdate = true;
+	// 每台伺服器三顆燈，照真的伺服器閃，而且各閃各的、不會整排一起跳：
+	//   第一顆電源燈：一直亮著；機房有專案掛掉時，其中一台變成琥珀色、一秒閃一次（故障燈）
+	//   第二顆硬碟燈：平常暗的，讀寫時一陣一陣快速閃
+	//   第三顆網路燈：連線時亮著，有流量就不規則地暗一下；越忙閃越密
+	// 每台伺服器忙的程度不一樣；Claude 在改機房的專案時，整間機房都忙起來
+	const LED = {
+		power: new THREE.Color('#46e39a'),
+		disk: new THREE.Color('#bfe9ff'),
+		net: new THREE.Color('#46e39a'),
+		off: new THREE.Color('#1c2a26'),
+		fault: new THREE.Color('#ffb347')
 	};
-	blinkLeds();
+	const ledState = leds.map((_, i) => ({ on: i % 3 !== 1, next: Math.random() * 2, end: 0, load: 0.15 + Math.random() * 0.85 }));
+	// 跟著同一台伺服器：三顆燈共用忙碌程度
+	ledState.forEach((s, i) => (s.load = ledState[i - (i % 3)].load));
+	const faultServer = desks.some((d) => d.desk.key.startsWith('vm:') && d.desk.asleep) ? Math.floor(leds.length / 3 / 2) : -1;
+	const stepLeds = (t: number) => {
+		if (!ledMesh) return;
+		const busy = desks.some((d) => d.desk.key.startsWith('vm:') && d.busy === 'working') ? 2.5 : 1;
+		let dirty = false;
+		for (let i = 0; i < leds.length; i++) {
+			const s = ledState[i];
+			const kind = i % 3;
+			let color: THREE.Color;
+			if (kind === 0) {
+				color = Math.floor(i / 3) === faultServer ? (t % 1 < 0.5 ? LED.fault : LED.off) : LED.power;
+			} else {
+				// 減少動態：不閃，硬碟燈暗著、網路燈亮著
+				if (!reduced && t >= s.next) {
+					if (kind === 1) {
+						// 硬碟：一陣讀寫裡每 25~85 毫秒亮暗一次，讀寫完休息一下，越忙休息越短
+						if (t < s.end) {
+							s.on = !s.on;
+							s.next = t + 0.025 + Math.random() * 0.06;
+						} else if (s.on) {
+							s.on = false;
+							s.next = t + (0.3 + Math.random() * 3) / (s.load * busy);
+						} else {
+							s.on = true;
+							s.end = t + 0.08 + Math.random() * (0.2 + s.load * 0.9);
+							s.next = t + 0.03;
+						}
+					} else {
+						// 網路：亮著的時間是隨機的（封包隨時會來），暗一下只有 20~60 毫秒
+						s.on = !s.on;
+						s.next = t + (s.on ? -Math.log(1 - Math.random()) * (0.7 / (s.load * busy)) : 0.02 + Math.random() * 0.04);
+					}
+				}
+				color = s.on ? (kind === 1 ? LED.disk : LED.net) : LED.off;
+			}
+			ledMesh.getColorAt(i, ledTmp);
+			if (!ledTmp.equals(color)) {
+				ledMesh.setColorAt(i, color);
+				dirty = true;
+			}
+		}
+		if (dirty) ledMesh.instanceColor!.needsUpdate = true;
+	};
+	const ledTmp = new THREE.Color();
+	if (ledMesh) leds.forEach((_, i) => ledMesh!.setColorAt(i, LED.off));
+	stepLeds(0);
 
 	// ---- 假陰影 ----
 	const blobMesh = new THREE.InstancedMesh(
@@ -1732,7 +1786,6 @@ export function createRoom(
 	let last = performance.now();
 	const start = last;
 	let introDone = reduced;
-	let ledTimer = 0;
 	/** 演過的 push 裡最大的 id；-1 是還沒收過即時狀態 */
 	let seenPush = -1;
 	/** push 對到哪位管理員：網站上有那個專案就是它，沒有就依 repo 名稱固定挑一位 */
@@ -1887,11 +1940,7 @@ export function createRoom(
 			for (const gp of glassParts) gp.visible = showGlass;
 		}
 
-		ledTimer += dt;
-		if (ledTimer > 0.35) {
-			ledTimer = 0;
-			blinkLeds();
-		}
+		stepLeds(t);
 
 		renderer.render(scene, camera);
 		frames++;
