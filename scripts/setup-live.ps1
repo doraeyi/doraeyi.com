@@ -16,6 +16,15 @@ function Get-Fingerprint([string]$text) {
 	(($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($text)) | ForEach-Object { $_.ToString('x2') }) -join '').Substring(0, 8)
 }
 
+# 把 JSON 寫成暫存檔（UTF-8、不帶 BOM）再交給 gh：用管線傳的話，某些 PowerShell 設定會在前面多一個 BOM，GitHub 就解析不了
+function Invoke-GhJson([string]$method, [string]$path, $data, [string]$query) {
+	$tmp = [IO.Path]::GetTempFileName()
+	try {
+		[IO.File]::WriteAllText($tmp, ($data | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding $false))
+		if ($query) { & $gh api -X $method $path --input $tmp -q $query } else { & $gh api -X $method $path --input $tmp | Out-Null }
+	} finally { Remove-Item $tmp -ErrorAction SilentlyContinue }
+}
+
 function Read-Secret([string]$prompt) {
 	$s = Read-Host $prompt -AsSecureString
 	$p = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($s)
@@ -70,10 +79,9 @@ foreach ($r in $repos) {
 	$id = (& $gh api "repos/$r/hooks" | ConvertFrom-Json | Where-Object { $_.config.url -eq $hookUrl } | Select-Object -First 1).id
 	if ($id) {
 		# 已經有了：只換 Secret
-		$config | ConvertTo-Json -Compress | & $gh api -X PATCH "repos/$r/hooks/$id/config" --input - | Out-Null
+		Invoke-GhJson PATCH "repos/$r/hooks/$id/config" $config
 	} else {
-		$body = @{ name = 'web'; active = $true; events = @('push'); config = $config } | ConvertTo-Json -Compress
-		$id = $body | & $gh api -X POST "repos/$r/hooks" --input - -q '.id'
+		$id = Invoke-GhJson POST "repos/$r/hooks" @{ name = 'web'; active = $true; events = @('push'); config = $config } '.id'
 	}
 	if ($LASTEXITCODE -ne 0 -or -not $id) { Write-Host "✗ $r 設不上去"; continue }
 	Write-Host "✓ $r"
