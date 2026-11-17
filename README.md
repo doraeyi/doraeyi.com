@@ -109,10 +109,12 @@ doraeyi/
 
 設定步驟：
 
-1. 產生兩串夠長的亂碼（例如 `openssl rand -hex 32` 跑兩次），分別當 `PRESENCE_TOKEN` 跟 `GITHUB_WEBHOOK_SECRET`，寫進 VM 上 `~/doraeyi-site/.env`，重新部署或 `docker compose up -d`
-2. 電腦上設環境變數 `DORAEYI_PRESENCE_TOKEN`（值跟 `PRESENCE_TOKEN` 一樣），重開 Claude Code
-3. 在 `~/.claude/settings.json` 的 `hooks` 裡，`UserPromptSubmit`、`PreToolUse`、`Stop`、`Notification`、`SessionEnd` 都加一個 `node <路徑>/claude-presence.mjs` 的 command hook
-4. 每個要澆水的 repo：Settings → Webhooks → Add webhook，Payload URL 填 `https://doraeyi.com/api/github`，**Content type 選 `application/json`**（選表單格式會被 SvelteKit 的 CSRF 檢查擋掉），Secret 填 `GITHUB_WEBHOOK_SECRET`，事件選「Just the push event」
+1. 產生一串夠長的亂碼（例如 `openssl rand -hex 32`）當 `PRESENCE_TOKEN`，寫進 VM 上 `~/doraeyi-site/.env`，`docker compose up -d`。`GITHUB_WEBHOOK_SECRET` 可以留空，網站會從 `PRESENCE_TOKEN` 算出來
+2. 在 `~/.claude/settings.json` 的 `hooks` 裡，`UserPromptSubmit`、`PreToolUse`、`Stop`、`Notification`、`SessionEnd` 都加一個 `node <路徑>/claude-presence.mjs` 的 command hook
+3. Windows 上跑 `powershell -ExecutionPolicy Bypass -File scripts\setup-live.ps1`：貼上 `PRESENCE_TOKEN`（隱藏輸入，會先打一次網站確認），設好使用者環境變數 `DORAEYI_PRESENCE_TOKEN`，再幫自己所有的 repo 加 webhook（`https://doraeyi.com/api/github`、`application/json`、只收 push），最後叫 GitHub 送 ping 確認網站收得到。webhook 的 Secret 用 `-FromPresence` 從 `PRESENCE_TOKEN` 算，不用另外搬密碼
+4. 重開 Claude Code
+
+webhook 的 **Content type 一定要是 `application/json`**，表單格式會被 SvelteKit 的 CSRF 檢查擋掉。
 
 ## 🚀 快速開始
 
@@ -147,7 +149,7 @@ pnpm test:qr
 | `VC_TOKEN` | 到 <https://vercel.com/account/tokens> 建立，用來讀取工作室（Vercel）的專案清單 |
 | `VC_TEAM_ID` | 專案放在 Team 底下才需要 |
 | `PRESENCE_TOKEN` | Claude Code hook 回報工作狀態用的密碼；沒設就不收 |
-| `GITHUB_WEBHOOK_SECRET` | GitHub webhook 的 Secret，驗證 push 真的是 GitHub 送的；沒設就不收 |
+| `GITHUB_WEBHOOK_SECRET` | GitHub webhook 的 Secret，驗證 push 真的是 GitHub 送的；留空就從 `PRESENCE_TOKEN` 算（HMAC），兩個都沒設就不收 |
 | `DATABASE_URL` | SQLite 檔案路徑，沒設就用 `data/doraeyi.db`；VM 上由 compose 設成 `/data/doraeyi.db` |
 
 > 變數名稱不能用 `VERCEL_` 開頭（Vercel 保留給系統變數），所以這裡用 `VC_`。

@@ -1,8 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { error, json } from '@sveltejs/kit';
-import { GITHUB_WEBHOOK_SECRET } from '$app/env/private';
 import { savePush } from '#lib/server/db.js';
-import { sameSecret } from '#lib/server/secret.js';
+import { sameSecret, webhookSecret } from '#lib/server/secret.js';
 import type { RequestHandler } from './$types';
 
 // GitHub webhook：repo 有 push 就通知這裡，管理員會跑去花園幫今天那棵樹澆水
@@ -11,8 +10,9 @@ import type { RequestHandler } from './$types';
 export const POST: RequestHandler = async ({ request }) => {
 	const raw = await request.text();
 	const sig = request.headers.get('x-hub-signature-256') ?? '';
-	if (!GITHUB_WEBHOOK_SECRET) error(503, '還沒設定 GITHUB_WEBHOOK_SECRET');
-	const expected = 'sha256=' + createHmac('sha256', GITHUB_WEBHOOK_SECRET).update(raw).digest('hex');
+	const secret = webhookSecret();
+	if (!secret) error(503, '還沒設定 GITHUB_WEBHOOK_SECRET 或 PRESENCE_TOKEN');
+	const expected = 'sha256=' + createHmac('sha256', secret).update(raw).digest('hex');
 	if (!sameSecret(sig, expected)) error(401, '簽章不對');
 
 	const event = request.headers.get('x-github-event');
