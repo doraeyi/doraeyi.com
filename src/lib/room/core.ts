@@ -1358,7 +1358,9 @@ export function createRoom(
 			// 變身是一段固定長度的動畫（約 3.4 秒，變回去 1.6 秒），等速往前走，每一段效果自己決定快慢；
 			// 往下拉一半的預覽也走同一條時間軸，所以拉的時候就看得到方塊開始浮上來
 			const rate = reduced ? 1 / 0.6 : qGoal > q ? 1 / 3.4 : 1 / 1.6;
-			const qStep = rate * dt;
+			// 用實際經過的時間走（一格最多 0.25 秒），不用 dt：算圖很慢的機器（或 CI 的軟體算圖）一秒只有幾格，
+			// dt 被壓在 0.05 秒的話變身會拖上好幾十秒；寧可跳格，也要在 3.4 秒左右拼好
+			const qStep = rate * Math.min(0.25, ms / 1000);
 			const wasDone = q >= 1;
 			q = Math.abs(qGoal - q) <= qStep ? qGoal : q + Math.sign(qGoal - q) * qStep;
 			if (q >= 1 && !wasDone) lockedAt = framedAt = t;
