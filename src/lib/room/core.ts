@@ -43,13 +43,11 @@ const FOYER: Interior = { wall: '#efe6d8', wainscot: '#dccab0', rail: '#b99a74',
 // 整棟房子外面統一一種牆色、一種牆頂收邊，兩間房間從外面看才是同一棟
 const EXTERIOR = '#e6dccb';
 const CAP = '#3b302a';
-// 花園：外圈矮籬的綠、草叢平常的綠，跟長密之後（變成 QR 的深色格子）的深綠
+// 花園：外圈矮籬的綠、草叢的綠
 const HEDGE = '#5f7f52';
 const BUSH = '#6b9a5c';
-const BUSH_QR = ['#24502d', '#2a5a33', '#1f4628', '#2d5f36'];
-// 屋頂：淺色屋瓦要夠白，深色是深灰藍石板瓦，跟花園的深綠草叢對比都夠
-const ROOF_LIGHT = '#f3eee6';
-const ROOF_DARK = ['#2e3a55', '#33405c', '#29344d', '#36435f'];
+// 變成 QR 時，房子淡成這個顏色的紙，當 QR 的淺色底
+const PAPER = '#f3eee6';
 
 // 提交花圃：剛冒芽的淡綠 → 越多越綠越高，跟 GitHub 的綠色格子同一個意思
 const LEVEL_COLORS = ['#b9c79d', '#93c46f', '#62a650', '#3e8744', '#2a6633'].map((c) => new THREE.Color(c));
@@ -168,8 +166,6 @@ export function createRoom(
 
 	// 出場動畫的物件：[物件, 延遲秒數]
 	const pops: [THREE.Object3D, number][] = [];
-	// 變 QR 時會壓扁收進土裡的東西（花圃跟說明牌）；房子裡的東西不用動，屋頂會蓋住
-	const sinkers: [THREE.Object3D, number][] = [];
 	const hits: THREE.Mesh[] = [];
 	const hitGeo = keep(new THREE.BoxGeometry(1, 1, 1));
 	const hitMat = keep(new THREE.MeshBasicMaterial());
@@ -499,7 +495,6 @@ export function createRoom(
 		base.position.set(carpet.x, 0, carpet.z);
 		scene.add(base);
 		pops.push([base, 0.25]);
-		sinkers.push([base, 0.2]);
 
 		const max = Math.max(1, ...world.commits);
 		bars = new THREE.InstancedMesh(keep(new THREE.BoxGeometry(BAR * 0.82, 1, BAR * 0.82)), toonPlain(), world.commits.length);
@@ -528,16 +523,14 @@ export function createRoom(
 		label.add(plate);
 		scene.add(label);
 		pops.push([label, 0.9]);
-		sinkers.push([label, 0.15]);
 	}
 	const barMatrix = new THREE.Matrix4();
-	/** mult：變成 QR code 時花縮回土裡 */
-	const setBars = (time: number, mult = 1) => {
+	const setBars = (time: number) => {
 		if (!bars || !carpet) return;
 		for (let i = 0; i < barHeights.length; i++) {
 			const col = Math.floor(i / 7);
 			const k = reduced ? 1 : popEase(clamp((time - 1.0 - col * 0.018) / 0.8, 0, 1));
-			const h = Math.max(0.001, barHeights[i] * k * mult);
+			const h = Math.max(0.001, barHeights[i] * k);
 			barMatrix.compose(
 				new THREE.Vector3(carpet.x - carpet.w / 2 + 0.35 + (col + 0.5) * BAR, 0.12 + h / 2, carpet.z - carpet.d / 2 + 0.35 + ((i % 7) + 0.5) * BAR),
 				new THREE.Quaternion(),
@@ -577,43 +570,26 @@ export function createRoom(
 	blobMat.opacity = reduced ? 1 : 0;
 	const lastPop = Math.max(...pops.map(([, delay]) => delay));
 
-	// ---- QR 格子：地板、屋頂、花園 ----
-	// 整塊地切成 QR 的格子（ICQR 的做法）。
-	//   房子裡：地板就只是地板；變身時屋頂一排排蓋回去，屋瓦的深淺就是 QR 的格子
-	//   露台跟花園：淺色格子是木板跟碎石，深色格子長成草叢，變身時長密變深綠、長到一樣高
+	// ---- 地板跟花園的格子 ----
+	// 整塊地切成 QR code 的格子：露台跟花園裡，深色的格子種成草叢，
+	// 所以從上面看，花園的草叢本來就排成 QR 的樣子（變身時浮起來的方塊就是從這裡長出去的）
 	type Zone = 'vercel' | 'vm' | 'foyer' | 'deck' | 'garden';
 	const zoneAt = (x: number, z: number): Zone => {
 		if (z < front) return x < foyer.x0 ? 'vercel' : x > foyer.x1 ? 'vm' : 'foyer';
 		return z < deckFront ? 'deck' : 'garden';
 	};
-	// light：地板或淺色格子；qr：變身後深色格子的顏色（房子裡是屋瓦，花園裡是長密的草叢），
-	// 亮度要壓得夠低，跟淺色格子的對比夠大，掃描器才讀得到；
-	// pattern：紋路；gap：格子之間留縫（木地板、碎石是一整片，不留）；lift：花園淺色格子變身時往白色提亮多少
-	const ZONE: Record<Zone, { light: string[]; qr: string[]; pattern: number; gap: boolean; lift: number }> = {
+	// light：地板的顏色；inlay：房子裡屬於 QR 深色格子的那幾格，用同一種材質深一階的顏色拼花，
+	// 平常看就是地板上一片 QR 的馬賽克，變身時飛上去的就是這幾格；pattern：紋路；gap：格子之間留縫（木地板、碎石是一整片，不留）
+	const ZONE: Record<Zone, { light: string[]; inlay?: string[]; pattern: number; gap: boolean }> = {
 		// 木地板的深淺交給每片木板自己變（detail.ts），格子本身只差一點點，不然會看到一塊塊方格
-		vercel: { light: ['#e0c59c', '#dec39a', '#e2c79f'], qr: ROOF_DARK, pattern: PATTERN.planks, gap: false, lift: 0 },
-		vm: { light: ['#7f8ca1', '#7a879c', '#8491a5'], qr: ROOF_DARK, pattern: PATTERN.panel, gap: true, lift: 0 },
-		foyer: { light: ['#d9cfc0', '#d4c9b9', '#ddd4c6'], qr: ROOF_DARK, pattern: PATTERN.stone, gap: true, lift: 0 },
-		deck: { light: ['#d2b48c', '#cdae86', '#d6b992'], qr: BUSH_QR, pattern: PATTERN.planks, gap: false, lift: 0.7 },
-		garden: { light: ['#e9e3d6', '#e4ddcf', '#eee8dc'], qr: BUSH_QR, pattern: PATTERN.gravel, gap: false, lift: 0.6 }
+		vercel: { light: ['#e0c59c', '#dec39a', '#e2c79f'], inlay: ['#b88b58', '#b48754', '#bb8f5c'], pattern: PATTERN.planks, gap: false },
+		vm: { light: ['#7f8ca1', '#7a879c', '#8491a5'], inlay: ['#56627a', '#525e75', '#5a667e'], pattern: PATTERN.panel, gap: true },
+		foyer: { light: ['#d9cfc0', '#d4c9b9', '#ddd4c6'], inlay: ['#a8998a', '#a49585', '#ac9d8e'], pattern: PATTERN.stone, gap: true },
+		deck: { light: ['#d2b48c', '#cdae86', '#d6b992'], pattern: PATTERN.planks, gap: false },
+		garden: { light: ['#e9e3d6', '#e4ddcf', '#eee8dc'], pattern: PATTERN.gravel, gap: false }
 	};
-	const QR_H = 0.42;
-	const WHITE = new THREE.Color('#ffffff');
-	interface Tile {
-		x: number;
-		z: number;
-		/** 變身時要升起來的深色格子（只有花園裡的） */
-		dark: boolean;
-		h0: number;
-		c0: THREE.Color;
-		c1: THREE.Color;
-		delay: number;
-		gap: boolean;
-		pattern: number;
-	}
-	const tiles: Tile[] = [];
-	/** 屋瓦：row 是從後面數來第幾排，屋頂從後面往前一排排蓋 */
-	const shingles: { x: number; z: number; row: number; color: THREE.Color }[] = [];
+	const qrDark = (r: number, c: number) => world.qr.bits[r * qrN + c] === '1';
+	const tiles: { x: number; z: number; h: number; color: THREE.Color; gap: boolean; pattern: number }[] = [];
 	{
 		let seed = 23;
 		const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
@@ -624,102 +600,379 @@ export function createRoom(
 			for (let c = 0; c < gridN; c++) {
 				const qr = r - QUIET;
 				const qc = c - QUIET;
-				const dark = qr >= 0 && qc >= 0 && qr < qrN && qc < qrN && world.qr.bits[qr * qrN + qc] === '1';
+				const dark = qr >= 0 && qc >= 0 && qr < qrN && qc < qrN && qrDark(qr, qc);
 				const x = -S / 2 + (c + 0.5) * C;
 				const z = back + (r + 0.5) * C;
 				const zone = zoneAt(x, z);
 				const theme = ZONE[zone];
-				const delay = (Math.hypot(x, z) / (S * 0.71)) * 0.25;
 				if (r < buildRows) {
-					// 房子裡：地板不帶 QR，QR 交給屋頂
-					const c0 = new THREE.Color(pick(theme.light));
-					tiles.push({ x, z, dark: false, h0: PLINTH + 0.05, c0, c1: c0, delay, gap: theme.gap, pattern: theme.pattern });
-					shingles.push({ x, z, row: r, color: new THREE.Color(dark ? pick(theme.qr) : ROOF_LIGHT) });
+					const color = new THREE.Color(pick(dark && theme.inlay ? theme.inlay : theme.light));
+					tiles.push({ x, z, h: PLINTH + 0.05, color, gap: theme.gap, pattern: theme.pattern });
 					continue;
 				}
 				// 花圃底下的深色格子平平的藏在土下面，其他深色格子長成高低不一的草叢
 				const bush = dark && !inCarpet(x, z);
-				const h0 = bush ? 0.16 + 0.22 * (Math.sin(c * 0.7 + 0.4) * Math.cos(r * 0.55) + 1) + rand() * 0.12 : zone === 'deck' ? 0.1 : 0.05;
-				const c0 = new THREE.Color(dark ? BUSH : pick(theme.light));
+				const h = bush ? 0.16 + 0.22 * (Math.sin(c * 0.7 + 0.4) * Math.cos(r * 0.55) + 1) + rand() * 0.12 : zone === 'deck' ? 0.1 : 0.05;
+				const color = new THREE.Color(dark ? BUSH : pick(theme.light));
 				if (bush) {
-					c0.offsetHSL(0, 0, (rand() - 0.5) * 0.08);
+					color.offsetHSL(0, 0, (rand() - 0.5) * 0.08);
 					// 草叢走不過去，花園就像一座小迷宮；碰撞範圍比草叢小一圈，隔一格的草叢之間才鑽得過去
 					block(x - C / 2 + 0.14, z - C / 2 + 0.14, x + C / 2 - 0.14, z + C / 2 - 0.14);
 				}
-				tiles.push({
-					x,
-					z,
-					dark,
-					h0,
-					c0,
-					// 淺色格子變身時往白色提亮，晚上燈光偏暗也有足夠對比
-					c1: dark ? new THREE.Color(pick(theme.qr)) : c0.clone().lerp(WHITE, theme.lift),
-					// 從中間往外一圈一圈升起
-					delay,
-					gap: theme.gap && !dark,
-					pattern: bush ? PATTERN.hedge : theme.pattern
-				});
+				tiles.push({ x, z, h, color, gap: theme.gap && !dark, pattern: bush ? PATTERN.hedge : theme.pattern });
 			}
 	}
 	const tileGeo = keep(new THREE.BoxGeometry(1, 1, 1));
 	tileGeo.setAttribute('pattern', new THREE.InstancedBufferAttribute(Float32Array.from(tiles, (tl) => tl.pattern), 1));
 	const tileMat = toonPlain();
-	const tileDetail = addDetail(tileMat);
+	addDetail(tileMat);
 	const tileMesh = new THREE.InstancedMesh(tileGeo, tileMat, tiles.length);
-	// 地磚不接收陰影：變成 QR 時旁邊升起的格子不會把淺色地磚照暗
 	tileMesh.receiveShadow = false;
-	const tileMatrix = new THREE.Matrix4();
-	const tileColor = new THREE.Color();
-	const smooth = (k: number) => k * k * (3 - 2 * k);
-	function setTiles(qq: number) {
-		for (let i = 0; i < tiles.length; i++) {
-			const tl = tiles[i];
-			// 深色格子升起、變色；淺色格子只提亮，不升高
-			const k = smooth(clamp((qq - 0.3 - tl.delay) / 0.4, 0, 1));
-			const h = tl.dark ? tl.h0 + (QR_H - tl.h0) * k : tl.h0;
-			// 有留縫的地磚變成 QR 時把縫合起來，掃描器比較好讀
-			const w = C * (tl.gap ? 0.94 + 0.06 * k : 1);
-			tileMatrix.makeScale(w, h, w).setPosition(tl.x, h / 2, tl.z);
-			tileMesh.setMatrixAt(i, tileMatrix);
-			tileMesh.setColorAt(i, tileColor.copy(tl.c0).lerp(tl.c1, k));
-		}
-		tileMesh.instanceMatrix.needsUpdate = true;
-		tileMesh.instanceColor!.needsUpdate = true;
-		// 紋路在格子升起之前就淡掉，變成 QR 時每一格都是乾淨的純色
-		tileDetail.uDetail.value = 1 - smooth(clamp((qq - 0.15) / 0.35, 0, 1));
-	}
-	setTiles(0);
+	tiles.forEach((tl, i) => {
+		const w = C * (tl.gap ? 0.94 : 1);
+		tileMesh.setMatrixAt(i, new THREE.Matrix4().makeScale(w, tl.h, w).setPosition(tl.x, tl.h / 2, tl.z));
+		tileMesh.setColorAt(i, tl.color);
+	});
 	board.add(tileMesh);
+	const smooth = (k: number) => k * k * (3 - 2 * k);
+	const WHITE = new THREE.Color('#ffffff');
+	const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 
-	// 屋頂：平常拿掉（像掀開屋頂的娃娃屋），變身時從後面往前一排排蓋回去
-	const ROOF_T = 0.12;
-	const ROOF_Y = PLINTH + WALL_H + 0.08 + ROOF_T / 2;
-	const roofMesh = new THREE.InstancedMesh(keep(new THREE.BoxGeometry(1, 1, 1)), toonPlain(), shingles.length);
-	shingles.forEach((sh, i) => roofMesh.setColorAt(i, sh.color));
-	roofMesh.visible = false;
-	scene.add(roofMesh);
-	const roofMatrix = new THREE.Matrix4();
 	// 走進去時房子要有天花板，不然抬頭就是夜空；從上面看的時候拿掉
 	// 素面就好：牆面的紋路是沿著牆的方向算的，放在水平的天花板上會變成一條條波紋
 	const ceiling = mesh(bake([[box(S, 0.04, buildD), '#efe8dc', m4(0, PLINTH + WALL_H + 0.02, back + buildD / 2)]]));
 	ceiling.visible = false;
 	scene.add(ceiling);
-	function setRoof(qq: number) {
-		roofMesh.visible = qq > 0.02;
-		if (!roofMesh.visible) return;
-		// 鏡頭在正上方，屋頂比花園的格子高，透視會讓它看起來大一點點；
-		// 以畫面中心為準按比例縮回去，從上面看屋瓦跟花園的格子才對得齊
-		const r = qrHalf() / tanHalf(QR_FOV);
-		const f = (r - (ROOF_Y + ROOF_T / 2 - QR_H)) / r;
-		for (let i = 0; i < shingles.length; i++) {
-			const sh = shingles[i];
-			// 鏡頭還斜斜的時候就開始蓋（往下拉一半就看得到屋瓦落下來），轉到正上方之前蓋好
-			const k = smooth(clamp((qq - 0.02 - (sh.row / buildRows) * 0.22) / 0.22, 0, 1));
-			if (k <= 0) roofMatrix.makeScale(0, 0, 0);
-			else roofMatrix.makeScale(C * f, ROOF_T, C * f).setPosition(sh.x * f, ROOF_Y + (1 - k) * 4, sh.z * f);
-			roofMesh.setMatrixAt(i, roofMatrix);
+
+	// ---- 視角錯覺：QR code 拆成一塊塊，浮在房子上空 ----
+	// QR 的深色格子拆成大大小小的方塊，散在房子上空不同的高度。
+	// 每一塊都擺在「從 P 這個位置看過去」的視線上，離 P 越近就縮得越小，側面也順著視線收斜，
+	// 所以只有鏡頭剛好站在 P 的時候，所有方塊才會在畫面上拼成一個平平的 QR code；
+	// 換個角度看，它們就散開成一堆漂浮的方塊（像街頭的錯覺藝術）
+	// 方塊從底板上的格子沿著視線往 P 拉上去，所以從 P 看，QR 剛好疊在底板上，花園的草叢也剛好藏在方塊後面
+	const GROUND_Y = 0.1;
+	const QR_Y = PLINTH + WALL_H + 0.4; // 方塊最低浮到這裡：比牆頂高一點，房子裡的東西不會擋到
+	const QR_YAW = -0.26;
+	const QR_PITCH = 0.98;
+	// 底板外面再留一圈淺色，連花園外圈的矮籬一起框進來，掃描器才找得到邊界
+	const QR_EDGE = RIM + 0.15;
+	/** 定位角在 QR 裡的左上角格子 */
+	const FINDERS = [
+		[0, 0],
+		[0, qrN - 7],
+		[qrN - 7, 0]
+	] as const;
+	interface Piece {
+		/** QR 裡的格子範圍：r0～r1 列、c0～c1 欄（不含 r1、c1） */
+		r0: number;
+		c0: number;
+		r1: number;
+		c1: number;
+		/** 頂面離 QR 平面多高、方塊多厚（公尺） */
+		top: number;
+		thick: number;
+		/** 飛的時候是原本地板的顏色跟紋路；對準時燒成同一個材質的深色版，掃描器才讀得到 */
+		floor: THREE.Color;
+		deep: THREE.Color;
+		pattern: number;
+		/** 什麼時候從地板拔起來（q） */
+		delay: number;
+		/** 飛上去的途中轉多少 */
+		spin: number;
+		/** 離最近的定位角多遠（0～0.7）：地板凸起、拔起來、對準時的青光，都從定位角往外擴散 */
+		wave: number;
+		/** 這塊是哪幾格地磚（tiles 的 index）、那幾格地磚最高多高 */
+		cells: number[];
+		ground: number;
+	}
+	const pieces: Piece[] = [];
+	{
+		let seed = 71;
+		const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+		const used = new Uint8Array(qrN * qrN);
+		const hsl = { h: 0, s: 0, l: 0 };
+		const add = (r0: number, c0: number, r1: number, c1: number, top: number, thick: number) => {
+			const cr = (r0 + r1) / 2;
+			const cc = (c0 + c1) / 2;
+			const wave = Math.min(...FINDERS.map(([fr, fc]) => Math.hypot(cr - fr - 3.5, cc - fc - 3.5))) / qrN;
+			const cells: number[] = [];
+			for (let r = r0; r < r1; r++) for (let c = c0; c < c1; c++) cells.push((QUIET + r) * gridN + QUIET + c);
+			const ground = Math.max(...cells.map((i) => tiles[i].h));
+			const tl = tiles[cells[0]];
+			tl.color.getHSL(hsl);
+			// 深色版：同一個色相、稍微飽和一點、壓到很暗（木地板變深咖啡、草叢變深綠）；
+			// 白天太陽把頂面照得很亮，要壓到這麼暗，跟淺色紙的對比才有 6:1 左右
+			const deep = new THREE.Color().setHSL(hsl.h, Math.min(1, hsl.s * 1.15 + 0.05), 0.05);
+			pieces.push({ r0, c0, r1, c1, top, thick, floor: tl.color, deep, pattern: tl.pattern, delay: 0.18 + wave * 0.3 + rand() * 0.08, spin: (rand() - 0.5) * 5, wave, cells, ground });
+		};
+		// 三個定位角：外框四條同一個高度，像一個浮在空中的相框，中間那塊浮在另一個高度
+		for (const [fr, fc] of FINDERS) {
+			for (let r = 0; r < 7; r++) for (let c = 0; c < 7; c++) used[(fr + r) * qrN + fc + c] = 1;
+			const ring = 1.4 + rand() * 3.6;
+			add(fr, fc, fr + 1, fc + 7, ring, 0.3);
+			add(fr + 6, fc, fr + 7, fc + 7, ring, 0.3);
+			add(fr + 1, fc, fr + 6, fc + 1, ring, 0.3);
+			add(fr + 1, fc + 6, fr + 6, fc + 7, ring, 0.3);
+			add(fr + 2, fc + 2, fr + 5, fc + 5, Math.max(1, ring + (rand() < 0.5 ? -1 : 1) * (0.9 + rand())), 0.8);
 		}
-		roofMesh.instanceMatrix.needsUpdate = true;
+		// 其他深色格子：相鄰的併成 1～3 格寬、1～3 格高的長方塊，大小不一才像散落的碎片
+		const free = (r: number, c: number) => r < qrN && c < qrN && qrDark(r, c) && !used[r * qrN + c];
+		for (let r = 0; r < qrN; r++)
+			for (let c = 0; c < qrN; c++) {
+				if (!free(r, c)) continue;
+				let w = 1;
+				const maxW = 1 + Math.floor(rand() * 3);
+				while (w < maxW && free(r, c + w)) w++;
+				let h = 1;
+				const maxH = 1 + Math.floor(rand() * 3);
+				while (h < maxH && Array.from({ length: w }, (_, i) => free(r + h, c + i)).every(Boolean)) h++;
+				for (let i = 0; i < h; i++) for (let j = 0; j < w; j++) used[(r + i) * qrN + c + j] = 1;
+				// 高度一半跟著一個起伏的波，一半亂數：遠看有高低的層次，近看又是散的
+				const wave = 0.5 + 0.5 * Math.sin(c * 0.5 + r * 0.23 + 1.3) * Math.cos(r * 0.41 - c * 0.17);
+				add(r, c, r + h, c + w, 0.6 + 6.2 * clamp(0.55 * wave + 0.45 * rand(), 0, 1), 0.2 + rand() * 0.5);
+			}
+	}
+	/** P：鏡頭要站的那個位置；fitQr 依畫面大小算出來 */
+	const qrEye = new THREE.Vector3();
+	const qrCenter = new THREE.Vector3(0, GROUND_Y, 0);
+	/** P 離 QR 中心多遠，跟 QR 在畫面上偏離中心多少（NDC） */
+	const qrCam = { r: 30, cx: 0, cy: 0 };
+	const PV = 24; // 每塊 6 面 × 4 個頂點，每一面各自的頂點，光影才是一面一面的
+	/** 方塊的 6 面（頂、底、四個側面），每一面的頂點順序都是從外面看逆時針，法線才朝外 */
+	const boxFaces = (T: number[][], B: number[][]) =>
+		[
+			[T[0], T[3], T[2], T[1]],
+			[B[0], B[1], B[2], B[3]],
+			[B[0], T[0], T[1], B[1]],
+			[B[2], T[2], T[3], B[3]],
+			[B[3], T[3], T[0], B[0]],
+			[B[1], T[1], T[2], B[2]]
+		].flat();
+	/** 地板上的格子先凸起來多高，讓人看到 QR 的圖案藏在地板裡 */
+	const BUMP = 0.12;
+	/** 每塊外擴一點點，相鄰兩塊在畫面上才不會露出一條細縫 */
+	const PAD = C * 0.02;
+	const rectOf = (pc: Piece) => [
+		-S / 2 + (QUIET + pc.c0) * C - PAD,
+		back + (QUIET + pc.r0) * C - PAD,
+		-S / 2 + (QUIET + pc.c1) * C + PAD,
+		back + (QUIET + pc.r1) * C + PAD
+	];
+	// 拔起來之前的樣子：跟凸起來的那幾格地磚一模一樣，拔起來的瞬間地磚藏起來、換成方塊，看起來就是地磚本身飛上去
+	const pieceGround = new Float32Array(pieces.length * PV * 3);
+	const groundMid = new Float32Array(pieces.length * 3);
+	pieces.forEach((pc, i) => {
+		const [x0, z0, x1, z1] = rectOf(pc);
+		const corners = [
+			[x0 + PAD, z0 + PAD],
+			[x1 - PAD, z0 + PAD],
+			[x1 - PAD, z1 - PAD],
+			[x0 + PAD, z1 - PAD]
+		];
+		boxFaces(
+			corners.map(([x, z]) => [x, pc.ground + BUMP, z]),
+			corners.map(([x, z]) => [x, 0, z])
+		).forEach((p, v) => pieceGround.set(p, (i * PV + v) * 3));
+		groundMid.set([(x0 + x1) / 2, (pc.ground + BUMP) / 2, (z0 + z1) / 2], i * 3);
+	});
+	const pieceFinal = new Float32Array(pieces.length * PV * 3);
+	const pieceMid = new Float32Array(pieces.length * 3);
+	const pieceGeo = keep(new THREE.BufferGeometry());
+	const piecePos = new THREE.BufferAttribute(new Float32Array(pieces.length * PV * 3), 3).setUsage(THREE.DynamicDrawUsage);
+	const pieceCol = new THREE.BufferAttribute(new Float32Array(pieces.length * PV * 3), 3).setUsage(THREE.DynamicDrawUsage);
+	pieceGeo.setAttribute('position', piecePos);
+	pieceGeo.setAttribute('color', pieceCol);
+	// 紋路用還在地上時的位置算，飛起來之後木紋、石磚的倒角都黏在方塊上
+	pieceGeo.setAttribute('rest', new THREE.BufferAttribute(pieceGround, 3));
+	pieceGeo.setAttribute('pattern', new THREE.BufferAttribute(Float32Array.from({ length: pieces.length * PV }, (_, v) => pieces[Math.floor(v / PV)].pattern), 1));
+	pieceGeo.setIndex(Array.from({ length: pieces.length * 6 }, (_, f) => [0, 1, 2, 0, 2, 3].map((v) => f * 4 + v)).flat());
+	const pieceMat = keep(new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ramp }));
+	addDetail(pieceMat, { cell: C, origin: -S / 2 });
+	const pieceMesh = new THREE.Mesh(pieceGeo, pieceMat);
+	pieceMesh.castShadow = true;
+	pieceMesh.frustumCulled = false;
+	pieceMesh.visible = false;
+	scene.add(pieceMesh);
+
+	/** 底板上 (x, z) 那一點，沿著往 P 的視線拉到離 QR_Y 高 y 的地方 */
+	const toEye = (x: number, z: number, y: number) => {
+		const s = (qrEye.y - QR_Y - y) / (qrEye.y - GROUND_Y);
+		return [qrEye.x + (x - qrEye.x) * s, QR_Y + y, qrEye.z + (z - qrEye.z) * s];
+	};
+	/** 在 QR_Y 這個高度上，東西要縮多少，從 P 看才跟底板上一樣大 */
+	const eyeScale = () => (qrEye.y - QR_Y) / (qrEye.y - GROUND_Y);
+	/** 依 P 算出每一塊最後的形狀：底板上的那幾格，沿著往 P 的視線拉到 top 那個高度 */
+	function buildPieces() {
+		const at = toEye;
+		pieces.forEach((pc, i) => {
+			const [x0, z0, x1, z1] = rectOf(pc);
+			const yb = Math.max(0.05, pc.top - pc.thick);
+			const T = [at(x0, z0, pc.top), at(x1, z0, pc.top), at(x1, z1, pc.top), at(x0, z1, pc.top)];
+			const B = [at(x0, z0, yb), at(x1, z0, yb), at(x1, z1, yb), at(x0, z1, yb)];
+			boxFaces(T, B).forEach((p, v) => pieceFinal.set(p, (i * PV + v) * 3));
+			pieceMid.set(at((x0 + x1) / 2, (z0 + z1) / 2, (pc.top + yb) / 2), i * 3);
+		});
+		pieceQ = -1;
+		// 淺色的紙也一樣，從 P 看剛好蓋住底板加外圈
+		const [wx, , wz] = toEye(0, 0, 0.01);
+		wash.position.set(wx, QR_Y + 0.01, wz);
+		wash.scale.setScalar(eyeScale());
+		for (const m of finders) {
+			const [x, , z] = toEye(m.userData.home[0], m.userData.home[1], 0.02);
+			m.position.set(x, QR_Y + 0.02, z);
+		}
+	}
+	/** 稍微衝過頭再回來的曲線 */
+	const backOut = (k: number) => 1 + 2.2 * Math.pow(k - 1, 3) + 1.2 * Math.pow(k - 1, 2);
+	const RISE = 0.24; // 每一塊浮上來花多少 q
+	let pieceQ = -1;
+	const CYAN = new THREE.Color('#22d3ee');
+	const pieceColor = new THREE.Color();
+	const tileMatrix = new THREE.Matrix4();
+	const tileColor = new THREE.Color();
+	const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
+	/**
+	 * 變身分兩步，讓人看得出方塊是從哪來的：
+	 *   1. 地板上屬於 QR 深色格子的地磚、草叢先凸起來，從三個定位角往外擴散，QR 的圖案先出現在房子的地上
+	 *   2. 一塊塊從地上拔起來（地上留下一個洞），帶著原本的顏色跟紋路，邊飛邊轉、拉長變形，飛到天上自己的位置
+	 * 快對準時燒成深色；拖開（off）就變回地板的顏色。lockAge：對準後過了幾秒，青光從定位角擴散出去
+	 */
+	function setPieces(qq: number, lockAge: number, off: number) {
+		if (qq !== pieceQ) {
+			pieceQ = qq;
+			const pos = piecePos.array as Float32Array;
+			for (let i = 0; i < pieces.length; i++) {
+				const pc = pieces[i];
+				const bump = reduced ? 0 : smooth(clamp((qq - 0.02 - pc.wave * 0.14) / 0.06, 0, 1));
+				const k = reduced ? (qq > 0.005 ? 1 : 0) : clamp((qq - pc.delay) / RISE, 0, 1);
+				for (const ti of pc.cells) {
+					const tl = tiles[ti];
+					const w = C * (tl.gap ? 0.94 : 1);
+					const h = tl.h + BUMP * bump;
+					tileMesh.setMatrixAt(ti, k > 0 ? HIDDEN : tileMatrix.makeScale(w, h, w).setPosition(tl.x, h / 2, tl.z));
+					tileMesh.setColorAt(ti, tileColor.copy(tl.color).lerp(WHITE, 0.12 * bump));
+				}
+				const o3 = i * 3;
+				if (k <= 0) {
+					for (let v = 0; v < PV * 3; v++) pos[i * PV * 3 + v] = v % 3 === 1 ? -50 : 0;
+					continue;
+				}
+				// 水平位置跟形狀照著 ease 走；高度多衝過頭一點點再停住
+				const ease = 1 - Math.pow(1 - k, 3);
+				const mx = lerp(groundMid[o3], pieceMid[o3], ease);
+				const my = lerp(groundMid[o3 + 1], pieceMid[o3 + 1], backOut(k));
+				const mz = lerp(groundMid[o3 + 2], pieceMid[o3 + 2], ease);
+				const a = pc.spin * 0.35 * Math.sin(Math.PI * ease);
+				const cos = Math.cos(a);
+				const sin = Math.sin(a);
+				for (let v = 0; v < PV; v++) {
+					const o = (i * PV + v) * 3;
+					const dx = lerp(pieceGround[o] - groundMid[o3], pieceFinal[o] - pieceMid[o3], ease);
+					const dy = lerp(pieceGround[o + 1] - groundMid[o3 + 1], pieceFinal[o + 1] - pieceMid[o3 + 1], ease);
+					const dz = lerp(pieceGround[o + 2] - groundMid[o3 + 2], pieceFinal[o + 2] - pieceMid[o3 + 2], ease);
+					pos[o] = mx + dx * cos + dz * sin;
+					pos[o + 1] = my + dy;
+					pos[o + 2] = mz - dx * sin + dz * cos;
+				}
+			}
+			tileMesh.instanceMatrix.needsUpdate = true;
+			tileMesh.instanceColor!.needsUpdate = true;
+			piecePos.needsUpdate = true;
+			pieceGeo.computeVertexNormals();
+		}
+		pieceMesh.visible = qq > 0.005;
+		if (!pieceMesh.visible) return;
+		// 顏色每一格都算：燒深的程度跟著 q 跟拖開的角度，對準後還有青光
+		const burn = smooth(clamp((qq - 0.74) / 0.2, 0, 1)) * (1 - clamp(off * 5, 0, 1));
+		const col = pieceCol.array as Float32Array;
+		for (let i = 0; i < pieces.length; i++) {
+			const pc = pieces[i];
+			const a = lockAge - pc.wave * 0.7;
+			const glow = !reduced && lockAge >= 0 && a > 0 ? 0.75 * Math.exp(-a * 5) : 0;
+			pieceColor.copy(pc.floor).lerp(pc.deep, burn).lerp(CYAN, glow);
+			for (let v = 0; v < PV; v++) pieceColor.toArray(col, (i * PV + v) * 3);
+		}
+		pieceCol.needsUpdate = true;
+	}
+
+	// 對準之後，房子淡成一張淺色的紙，只剩浮在上面的方塊是深色的，掃描器才讀得到；
+	// 房子還是隱約看得到，提醒人這個 QR 是從房子拼出來的
+	const washMat = keep(new THREE.MeshBasicMaterial({ color: PAPER, transparent: true, opacity: 0, depthWrite: false }));
+	const wash = new THREE.Mesh(keep(new THREE.PlaneGeometry(S + QR_EDGE * 2, S + QR_EDGE * 2)), washMat);
+	wash.rotation.x = -Math.PI / 2;
+	wash.visible = false;
+	scene.add(wash);
+
+	// ---- 對準的瞬間：定位角亮一下、掃描框對焦 ----
+	// 都畫在 QR 平面上：從 P 看，它們剛好貼著 QR 的邊
+	const fx = new THREE.Group();
+	scene.add(fx);
+	const glowMat = (color: string, opacity = 1) => keep(new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false }));
+	const finderMat = glowMat('#22d3ee', 0);
+	const ringGeo = (() => {
+		const sq = 7 * C;
+		const t = C * 0.9;
+		const parts: Part[] = [
+			[box(sq + t, 0.02, t), '#fff', m4(0, 0, -sq / 2)],
+			[box(sq + t, 0.02, t), '#fff', m4(0, 0, sq / 2)],
+			[box(t, 0.02, sq - t), '#fff', m4(-sq / 2, 0, 0)],
+			[box(t, 0.02, sq - t), '#fff', m4(sq / 2, 0, 0)]
+		];
+		return keep(bake(parts));
+	})();
+	const finders = FINDERS.map(([r, c]) => {
+		const m = new THREE.Mesh(ringGeo, finderMat);
+		m.userData.home = [-S / 2 + (QUIET + c + 3.5) * C, back + (QUIET + r + 3.5) * C];
+		m.visible = false;
+		fx.add(m);
+		return m;
+	});
+	// 四個角的掃描框，像手機相機對焦時的框；擺在底板外面那一圈，不壓到 QR
+	const bracketMat = glowMat('#22d3ee', 0);
+	const brackets = [-1, 1].flatMap((sx) =>
+		[-1, 1].map((sz) => {
+			const L = 2.0;
+			const t = 0.18;
+			const g = keep(
+				bake([
+					[box(L, 0.02, t), '#fff', m4((-sx * L) / 2, 0, 0)],
+					[box(t, 0.02, L), '#fff', m4(0, 0, (-sz * L) / 2)]
+				])
+			);
+			const m = new THREE.Mesh(g, bracketMat);
+			m.userData.home = [sx * (S / 2 + 0.3), sz * (S / 2 + 0.3)];
+			m.visible = false;
+			fx.add(m);
+			return m;
+		})
+	);
+	let lockedAt = -1; // 最近一次對準的時間（秒）：變身完成，或拖開之後彈回來
+	let framedAt = -1; // 變身完成的時間，掃描框只在這時收進來一次
+	/** 定位角、掃描框跟著對準後的時間走；回傳對準後過了幾秒（還沒對準是 -1） */
+	function setFx(qq: number, t: number) {
+		const a = qrOn && qq >= 1 ? t - lockedAt : -1;
+		const on = a >= 0;
+		for (const m of finders) {
+			m.visible = on && !reduced && a < 2.5;
+			if (!m.visible) continue;
+			// 亮起來時從大一圈縮回定位角上，接著慢慢淡掉
+			const s = 1 + 0.45 * Math.exp(-a * 7);
+			m.scale.set(s * eyeScale(), 1, s * eyeScale());
+			finderMat.opacity = a < 0.12 ? a / 0.12 : Math.exp(-(a - 0.12) * 2.4);
+		}
+		const fa = t - framedAt;
+		for (const m of brackets) {
+			m.visible = on;
+			if (!on) continue;
+			// 從外面收進來對準，最後留著淡淡的框
+			const k = reduced ? 1 : 1 - Math.pow(1 - clamp(fa / 0.45, 0, 1), 3);
+			const s = 1 + (1 - k) * 0.18;
+			const [x, , z] = toEye(m.userData.home[0] * s, m.userData.home[1] * s, 0.02);
+			m.position.set(x, QR_Y + 0.02, z);
+			m.scale.set(eyeScale(), 1, eyeScale());
+			bracketMat.opacity = 0.85 * k;
+		}
+		return a;
 	}
 
 	// ---- 走進去：第一人稱，WASD／搖桿走、拖曳轉頭 ----
@@ -808,22 +1061,11 @@ export function createRoom(
 	function applyQr() {
 		if (Math.abs(q - lastQ) < 1e-4) return;
 		lastQ = q;
-		// 花圃跟說明牌收進土裡；房子裡的東西不用動，屋頂會蓋住
-		for (const [obj, delay] of sinkers) {
-			const k = smooth(clamp((q - delay) / 0.4, 0, 1));
-			obj.scale.set(1 + k * 0.15, Math.max(1e-4, 1 - k), 1 + k * 0.15);
-			obj.visible = k < 0.999;
-		}
-		setRoof(q);
-		setBars(99, 1 - smooth(clamp(q / 0.35, 0, 1)));
-		if (bars) bars.visible = q < 0.35;
-		if (ledMesh) ledMesh.visible = q < 0.1;
-		blobMesh.visible = q < 0.1;
-		const lightsOn = 1 - smooth(clamp(q / 0.4, 0, 1));
+		// 房間照常亮著，方塊浮上來時還看得到房子；晚上的暖燈在對準前關掉，
+		// 不然花園上空那盞燈會把附近的方塊照亮，深淺的對比不夠
+		const lightsOn = 1 - smooth(clamp((q - 0.6) / 0.35, 0, 1));
 		for (const [l, base] of nightLights) l.intensity = base * lightsOn;
-		// 燈關掉後晚上的 QR 偏暗，用天光補回來，淺色格子才夠白
-		if (night) hemi.intensity = 0.85 + 0.9 * (1 - lightsOn);
-		setTiles(q);
+		if (ledMesh) ledMesh.visible = q < 0.9;
 	}
 
 	// 陰影範圍蓋住整塊底板
@@ -910,7 +1152,7 @@ export function createRoom(
 	// 直式手機看房間：房間在後排、上面只有夜空，把房間往上挪一點，下面多露出一些地毯
 	const shiftGoal = () =>
 		qrOn
-			? { x: 0, y: (QR_BOTTOM - QR_TOP) / 2 }
+			? { x: (qrCam.cx * width) / 2, y: (QR_BOTTOM - QR_TOP) / 2 - (qrCam.cy * height) / 2 }
 			: panel
 				? portrait()
 					? { x: 0, y: height * 0.24 }
@@ -920,50 +1162,105 @@ export function createRoom(
 					: { x: 0, y: 0 };
 	let lastInput = -10;
 
-	// 變成 QR 時鏡頭轉到底板正上方，同時把視角收窄、拉遠（推拉變焦），
-	// 畫面大小不變但透視被壓平，升起來的格子從上面看才會剛好對齊
 	const BASE_FOV = camera.fov;
-	const QR_FOV = 3.5;
-	// 底板外面再留一圈，連花園外圈的矮籬一起框進來
-	const QR_EDGE = RIM + 0.15;
-	const qrTarget = new THREE.Vector3(0, QR_H, 0);
 	const lookTarget = new THREE.Vector3();
-	const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
-	const tanHalf = (fov: number) => Math.tan(THREE.MathUtils.degToRad(fov / 2));
 	// 上面的狀態列、下面的說明卡跟切換列會蓋住畫面，QR 只放在中間沒被蓋到的那段
 	const QR_TOP = 72;
 	const QR_BOTTOM = 170;
-	/** 從正上方看，整塊地剛好塞進沒被蓋到的範圍時的半高 */
-	const qrHalf = () => {
-		const need = S / 2 + QR_EDGE;
-		const free = Math.max(0.4, (height - QR_TOP - QR_BOTTOM) / height);
-		return Math.max(need / free, (need * height) / width) * 1.04;
-	};
+	const probe = new THREE.PerspectiveCamera();
+	const probeV = new THREE.Vector3();
+	const qrCorners = [-1, 1].flatMap((sx) => [-1, 1].map((sz) => new THREE.Vector3(sx * (S / 2 + QR_EDGE), GROUND_Y, sz * (S / 2 + QR_EDGE))));
+	/** 從 QR 中心往 (yaw, pitch) 方向的單位向量 */
+	const dirOf = (yaw: number, pitch: number, out: THREE.Vector3) =>
+		out.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
+	/** 找 P：沿著 QR_YAW、QR_PITCH 的方向退到整塊 QR 剛好塞進沒被蓋到的範圍，再依 P 重排方塊 */
+	function fitQr() {
+		probe.fov = BASE_FOV;
+		probe.aspect = width / height;
+		probe.updateProjectionMatrix();
+		const dir = dirOf(QR_YAW, QR_PITCH, new THREE.Vector3());
+		const measure = (r: number) => {
+			probe.position.copy(dir).multiplyScalar(r).add(qrCenter);
+			probe.lookAt(qrCenter);
+			probe.updateMatrixWorld();
+			const box = [Infinity, -Infinity, Infinity, -Infinity];
+			for (const c of qrCorners) {
+				probeV.copy(c).project(probe);
+				box[0] = Math.min(box[0], probeV.x);
+				box[1] = Math.max(box[1], probeV.x);
+				box[2] = Math.min(box[2], probeV.y);
+				box[3] = Math.max(box[3], probeV.y);
+			}
+			return box;
+		};
+		// NDC 的寬高是 2；左右各留 16px，上下扣掉狀態列跟說明卡，再多留一點邊
+		const maxW = ((width - 32) / width) * 2 * 0.96;
+		const maxH = Math.max(0.4, (height - QR_TOP - QR_BOTTOM) / height) * 2 * 0.96;
+		let lo = (S / 2 + QR_EDGE) * 1.5;
+		let hi = 600;
+		for (let i = 0; i < 40; i++) {
+			const mid = (lo + hi) / 2;
+			const [x0, x1, y0, y1] = measure(mid);
+			if (x1 - x0 <= maxW && y1 - y0 <= maxH) hi = mid;
+			else lo = mid;
+		}
+		const [x0, x1, y0, y1] = measure(hi);
+		Object.assign(qrCam, { r: hi, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 });
+		qrEye.copy(dir).multiplyScalar(hi).add(qrCenter);
+		buildPieces();
+	}
 
-	function applyCamera(t: number) {
-		const e = smooth(q);
+	/**
+	 * 從側邊滑到 P 的進度：先在側邊停久一點讓人看清楚一堆浮著的方塊，接著越滑越快，
+	 * 在最後一刻衝進 P、衝過頭一點點再彈回來，方塊「喀」一聲拼起來
+	 */
+	const arrive = (qq: number) => {
+		const k = clamp((qq - 0.4) / 0.48, 0, 1);
+		if (qq < 0.88) return Math.pow(k, 1.8);
+		const m = clamp((qq - 0.88) / 0.12, 0, 1);
+		return 1 + 0.035 * Math.sin(m * Math.PI * 2) * (1 - m) * (1 - m);
+	};
+	// 使用者在 QR 模式拖曳時偏離 P 多少；放開就彈回去
+	const peek = { yaw: 0, pitch: 0, max: 0 };
+	const side = new THREE.Vector3();
+	const dirNow = new THREE.Vector3();
+	/** lockAge：對準後過了幾秒（還沒對準是 -1），用來讓畫面最後往前頓一下 */
+	function applyCamera(t: number, lockAge = -1) {
 		const idle = !reduced && t - lastInput > 5 ? Math.sin(t * 0.18) * 0.06 : 0;
-		const yaw = (cam.yaw + user.yaw + idle) * (1 - e);
-		const pitch = lerp(clamp(cam.pitch + user.pitch, 0.18, 1.25), Math.PI / 2 - 0.0005, e);
-		const fov = lerp(BASE_FOV, QR_FOV, e);
-		const half = lerp(cam.dist * user.zoom * tanHalf(BASE_FOV), qrHalf(), e);
-		const r = half / tanHalf(fov);
+		let yaw = cam.yaw + user.yaw + idle;
+		let pitch = clamp(cam.pitch + user.pitch, 0.18, 1.25);
+		let r = cam.dist * user.zoom;
+		lookTarget.copy(cam.target);
+		// 變身的運鏡：先繞到側邊、壓低（看得到一堆方塊從房子裡浮上來），再滑到 P，方塊在最後一刻拼成 QR
+		// 一開始鏡頭先不動，讓人看到地板上的 QR 圖案浮現、地磚開始被拔起來
+		const a = reduced ? 0 : smooth(clamp((q - 0.1) / 0.4, 0, 1));
+		const b = reduced ? smooth(q) : arrive(q);
+		if (a > 0) {
+			side.set(0, QR_Y + 1.2, 0);
+			yaw = lerp(yaw, QR_YAW + 1.6, a);
+			pitch = lerp(pitch, 0.32, a);
+			r = lerp(r, qrCam.r * 0.8, a);
+			lookTarget.lerp(side, a);
+		}
+		if (b !== 0) {
+			yaw = lerp(yaw, QR_YAW + peek.yaw, b);
+			pitch = lerp(pitch, QR_PITCH + peek.pitch, b);
+			r = lerp(r, qrCam.r, b);
+			lookTarget.lerp(qrCenter, b);
+		}
+		// 對焦鎖定：用視角往前頓一下（鏡頭位置不動，方塊才不會又錯開）
+		const punch = lockAge >= 0 && !reduced ? 1 - 0.05 * Math.exp(-lockAge * 4) * Math.sin(lockAge * 11) : 1;
 		// 走進去：從空中的位置平滑移到人的眼睛，視角放寬成一般人眼的範圍
 		const wk = smooth(clamp(wv, 0, 1));
-		const fovNow = lerp(fov, WALK_FOV, wk);
-		const near = wk > 0.01 ? 0.05 : Math.max(0.5, r - 40);
+		const fovNow = lerp(BASE_FOV * punch, WALK_FOV, wk);
+		const near = wk > 0.01 ? 0.05 : Math.max(0.5, r - 50);
 		if (camera.fov !== fovNow || camera.near !== near) {
 			camera.fov = fovNow;
 			camera.near = near;
 			camera.far = r + 80;
 			camera.updateProjectionMatrix();
 		}
-		lookTarget.lerpVectors(cam.target, qrTarget, e);
-		camera.position.set(
-			lookTarget.x + Math.sin(yaw) * Math.cos(pitch) * r,
-			lookTarget.y + Math.sin(pitch) * r,
-			lookTarget.z + Math.cos(yaw) * Math.cos(pitch) * r
-		);
+		camera.position.copy(lookTarget).addScaledVector(dirOf(yaw, pitch, dirNow), r);
 		if (wk > 0) {
 			const cp = Math.cos(me.pitch);
 			eyePos.set(me.x, me.eye, me.z);
@@ -996,8 +1293,8 @@ export function createRoom(
 		camera.updateProjectionMatrix();
 		applyTier();
 		goal = ladderGoal();
-		// 屋頂的透視修正跟畫面大小有關
-		setRoof(q);
+		// P 跟畫面大小有關：畫面變了，P 跟方塊的位置都要重算
+		fitQr();
 	}
 	resize(width, height, dpr);
 
@@ -1058,7 +1355,13 @@ export function createRoom(
 			if (!qrOn && pull >= 1) toggleQr(true);
 			else if (qrOn && pull <= -1) toggleQr(false);
 			const qGoal = qrOn ? 1 - Math.max(0, -pull) * 0.2 : Math.max(0, pull) * 0.2;
-			q = Math.abs(q - qGoal) < 0.0005 ? qGoal : damp(q, qGoal, reduced ? 9 : 2.2, dt);
+			// 變身是一段固定長度的動畫（約 3.4 秒，變回去 1.6 秒），等速往前走，每一段效果自己決定快慢；
+			// 往下拉一半的預覽也走同一條時間軸，所以拉的時候就看得到方塊開始浮上來
+			const rate = reduced ? 1 / 0.6 : qGoal > q ? 1 / 3.4 : 1 / 1.6;
+			const qStep = rate * dt;
+			const wasDone = q >= 1;
+			q = Math.abs(qGoal - q) <= qStep ? qGoal : q + Math.sign(qGoal - q) * qStep;
+			if (q >= 1 && !wasDone) lockedAt = framedAt = t;
 			if (Math.abs(pull - sentPull) > 0.04 || (pull === 0) !== (sentPull === 0)) {
 				sentPull = Math.abs(pull) < 0.02 ? 0 : pull;
 				pull = sentPull === 0 ? 0 : pull;
@@ -1083,7 +1386,23 @@ export function createRoom(
 		wv = damp(wv, walkOn ? 1 : 0, reduced ? 12 : 2.2, dt);
 		if (walkOn) updateWalk(dt);
 		ceiling.visible = walkOn && wv > 0.85;
-		applyCamera(t);
+		// QR 模式拖開之後放手：彈回 P，對準的那一刻再亮一次
+		if (t - lastInput > 0.12) {
+			peek.yaw = damp(peek.yaw, 0, 7, dt);
+			peek.pitch = damp(peek.pitch, 0, 7, dt);
+		}
+		const off = Math.hypot(peek.yaw, peek.pitch);
+		peek.max = Math.max(peek.max, off);
+		if (off < 0.008 && peek.max > 0.12) {
+			peek.max = 0;
+			if (qrOn && q >= 1) lockedAt = t;
+		}
+		const lockAge = setFx(q, t);
+		setPieces(q, off < 0.008 ? lockAge : -1, off);
+		// 拖開的時候房子淡回來一點，看得出這些方塊是浮在房子上面的
+		washMat.opacity = 0.8 * smooth(clamp((q - 0.8) / 0.2, 0, 1)) * (1 - 0.6 * clamp(off * 4, 0, 1));
+		wash.visible = washMat.opacity > 0.005;
+		applyCamera(t, off < 0.008 ? lockAge : -1);
 
 		// 管理員
 		for (const dv of desks) {
@@ -1153,6 +1472,7 @@ export function createRoom(
 		pull = sentPull = 0;
 		user.yaw = user.pitch = 0;
 		user.zoom = 1;
+		peek.yaw = peek.pitch = peek.max = 0;
 		// 剛切換完，手指或滾輪通常還在動，先忽略一下，不然一變回房間就被拉近
 		lockUntil = performance.now() + 800;
 		emit({ type: 'qr', on, pull: 0 });
@@ -1243,8 +1563,10 @@ export function createRoom(
 			}
 			if (performance.now() < lockUntil) return;
 			if (qrOn) {
-				// QR 模式：往上推變回房間
-				if (dy < 0) pull += dy * 3.5;
+				// QR 模式：左右拖、往下拖會離開 P，方塊散開、看得出是立體的，放手就彈回來；往上推變回房間
+				peek.yaw = clamp(peek.yaw - dx * 2.2, -0.9, 0.9);
+				if (dy > 0) peek.pitch = clamp(peek.pitch - dy * 1.6, -0.6, 0);
+				else pull += dy * 3.5;
 				return;
 			}
 			user.yaw = clamp(user.yaw - dx * 2.2, -0.9, 0.9);

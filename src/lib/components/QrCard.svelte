@@ -19,7 +19,7 @@
 	<p>
 		<b class="far">掃一下，追蹤我的 GitHub</b>
 		<b class="near">在手機上？存下來或直接分享</b>
-		<span>往上推或按「全景」回到房間</span>
+		<span>拖一下，看它是怎麼拼起來的；往上推回到房間</span>
 	</p>
 	<a class="btn" href="/qr.png" download="doraeyi-github-qr.png">存圖</a>
 	{#if canShare}
@@ -44,7 +44,13 @@
 		background: rgb(14 14 22 / 0.8);
 		backdrop-filter: blur(12px);
 		white-space: nowrap;
-		animation: cardIn 0.6s var(--ease) 0.8s both;
+		/* 等方塊拼好、掃描框對準之後才出現，不要搶戲 */
+		animation: cardIn 0.6s var(--ease) 3.4s both;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.qr-card {
+			animation-delay: 0.5s;
+		}
 	}
 	@keyframes cardIn {
 		from {

@@ -23,11 +23,14 @@ export const PATTERN = {
 } as const;
 
 /**
- * 在 MeshToonMaterial 上加紋路。回傳的 uniform 可以調整紋路強度：
- * 地磚變成 QR code 時把強度降到 0，格子才會是乾淨的純色，掃描器比較好讀
+ * 在 MeshToonMaterial 上加紋路。回傳的 uniform 可以調整紋路強度。
+ * rest：會飛來飛去的東西（QR 的方塊）改用頂點的 rest 屬性（它還在地上時的位置）算紋路，
+ * 紋路才會黏在方塊上跟著飛，不會在表面上滑動；cell、origin 是地磚格子的大小跟起點，用來畫每一格的倒角
  */
-export function addDetail(material: THREE.MeshToonMaterial) {
+export function addDetail(material: THREE.MeshToonMaterial, rest?: { cell: number; origin: number }) {
 	const uniforms = { uDetail: { value: 1 } };
+	const cell = rest?.cell.toFixed(5);
+	const origin = rest?.origin.toFixed(5);
 	material.onBeforeCompile = (shader) => {
 		shader.uniforms.uDetail = uniforms.uDetail;
 		shader.vertexShader = shader.vertexShader
@@ -35,13 +38,19 @@ export function addDetail(material: THREE.MeshToonMaterial) {
 				'#include <common>',
 				/* glsl */ `#include <common>
 				attribute float pattern;
+				${rest ? 'attribute vec3 rest;' : ''}
 				varying float vPattern;
 				varying vec3 vWorld;
 				varying vec3 vLocal;`
 			)
 			.replace(
 				'#include <project_vertex>',
-				/* glsl */ `#include <project_vertex>
+				rest
+					? /* glsl */ `#include <project_vertex>
+				vWorld = rest;
+				vLocal = vec3(fract((rest.x - ${origin}) / ${cell}), clamp(rest.y / 0.5, 0.0, 1.0), fract((rest.z - ${origin}) / ${cell}));
+				vPattern = pattern;`
+					: /* glsl */ `#include <project_vertex>
 				vec4 detailPos = vec4(transformed, 1.0);
 				#ifdef USE_INSTANCING
 					detailPos = instanceMatrix * detailPos;
@@ -115,6 +124,6 @@ export function addDetail(material: THREE.MeshToonMaterial) {
 			);
 	};
 	// 加了紋路的材質要跟沒加的分開編譯，不然 three 會拿快取裡的舊程式
-	material.customProgramCacheKey = () => 'detail';
+	material.customProgramCacheKey = () => (rest ? 'detail-rest' : 'detail');
 	return uniforms;
 }
