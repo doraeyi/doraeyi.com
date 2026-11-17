@@ -10,7 +10,19 @@ import { bake, box, buildKeeper, cone, cyl, m4, sphere, type KeeperRig, type Par
 import type { Focus, FromScene, SceneOptions, SceneStats, Tier } from './protocol.js';
 import { addDetail, PATTERN } from './detail.js';
 import type { DeskState, LiveData } from '#lib/types.js';
-import { blobTexture, bubbleTexture, carpetLabelTexture, codeTexture, nameTexture, screenTexture, shotTexture, toonRamp, windowTexture, zTexture } from './textures.js';
+import {
+	blobTexture,
+	bubbleTexture,
+	carpetLabelTexture,
+	codeTexture,
+	deskSignTexture,
+	nameTexture,
+	screenTexture,
+	shotTexture,
+	toonRamp,
+	windowTexture,
+	zTexture
+} from './textures.js';
 import type { Desk, Room, World } from './world.js';
 
 const CELL_X = 2.7;
@@ -474,6 +486,29 @@ export function createRoom(
 			carrier.rotation.y = SEAT_YAW;
 			carrier.add(rig.root);
 			deskGroup.add(carrier);
+			if (desk.work) {
+				// 公司的桌子：桌角一塊三角名牌，管理員胸前掛一張識別證（去花園也戴著）
+				const sign = new THREE.Mesh(
+					keep(new THREE.PlaneGeometry(0.34, 0.13)),
+					keep(new THREE.MeshBasicMaterial({ map: keep(deskSignTexture('公司')), transparent: true }))
+				);
+				sign.position.set(0.3, top + 0.1, 0.27);
+				sign.rotation.set(-0.35, -0.2, 0);
+				deskGroup.add(sign);
+				deskGroup.add(mesh(bake([[box(0.34, 0.13, 0.01), '#2b2d3a', m4(0.3, top + 0.1, 0.262, -0.35, -0.2, 0)]])));
+				const chest = desk.keeper === 'robot' ? [0.42, 0.18] : [0.3, 0.28];
+				rig.root.add(
+					mesh(
+						bake([
+							// 掛繩繞過脖子垂下來，卡片是白底、上面一條公司色
+							[new THREE.TorusGeometry(0.12, 0.008, 4, 16, Math.PI), '#e2793f', m4(0, chest[0] + 0.12, chest[1] - 0.02, Math.PI, 0, 0, 1, 1.4, 1)],
+							[box(0.1, 0.13, 0.012), '#ffffff', m4(0, chest[0] - 0.02, chest[1] + 0.01)],
+							[box(0.1, 0.03, 0.014), '#ffc861', m4(0, chest[0] + 0.03, chest[1] + 0.012)],
+							[box(0.05, 0.035, 0.014), '#9aa3b8', m4(0, chest[0] - 0.04, chest[1] + 0.012)]
+						])
+					)
+				);
+			}
 			// 頭上的對話泡泡：Claude 在做事是「…」，做完了在等你是打勾
 			const bubbleMat = keep(new THREE.SpriteMaterial({ map: bubbleTex[0], transparent: true, depthWrite: false }));
 			const bubble = new THREE.Sprite(bubbleMat);

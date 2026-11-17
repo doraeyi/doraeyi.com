@@ -15,6 +15,8 @@ export interface Desk {
 	ms: number | null;
 	/** 首頁截圖，螢幕會貼這張；沒有就顯示文字版 */
 	shot: string | null;
+	/** 公司的專案：桌上放名牌、管理員掛識別證，螢幕不顯示網域 */
+	work: boolean;
 }
 
 export interface Room {
@@ -80,7 +82,8 @@ export function buildWorld(data: SiteData, night = taipeiNight()): World {
 				asleep: p.asleep,
 				unchecked: !p.health,
 				ms: p.health?.ms ?? null,
-				shot: p.shot
+				shot: p.shot,
+				work: p.key.startsWith('work:')
 			}));
 
 	return {

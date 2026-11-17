@@ -47,4 +47,6 @@ export const ROOMS: Record<Host, { name: string; blurb: string }> = {
 
 /** 管理員現在的狀態：cls 給燈號跟狀態框配色用 */
 export const projectStatus = (p: Project) =>
-	p.asleep ? { cls: 'down', text: '睡著了' } : p.health ? { cls: 'up', text: '醒著值班中' } : { cls: 'idle', text: '等第一次巡房' };
+	p.key.startsWith('work:')
+		? { cls: 'idle', text: '上班用・不公開' }
+		: p.asleep ? { cls: 'down', text: '睡著了' } : p.health ? { cls: 'up', text: '醒著值班中' } : { cls: 'idle', text: '等第一次巡房' };

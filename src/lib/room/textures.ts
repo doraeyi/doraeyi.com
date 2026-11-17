@@ -148,12 +148,13 @@ export function screenTexture(d: Desk) {
 	fit(ctx, d.title, W - 40, 800, 40);
 	ctx.fillText(d.title, 20, 66);
 
+	const domain = d.work ? '公司內部・不公開' : (d.domain ?? '尚未公開');
 	ctx.fillStyle = down ? '#ff9db0' : '#8fd8ff';
-	fit(ctx, d.domain ?? '尚未公開', W - 40, 500, 22);
-	ctx.fillText(d.domain ?? '尚未公開', 20, 104);
+	fit(ctx, domain, W - 40, 500, 22);
+	ctx.fillText(domain, 20, 104);
 
-	const color = down ? '#ff5d7a' : d.unchecked ? '#9aa0c0' : '#46e39a';
-	const label = down ? 'DOWN · 管理員睡著了' : d.unchecked ? '等待第一次巡房' : `ONLINE${d.ms !== null ? ` · ${d.ms}ms` : ''}`;
+	const color = down ? '#ff5d7a' : d.work ? '#ffc861' : d.unchecked ? '#9aa0c0' : '#46e39a';
+	const label = down ? 'DOWN · 管理員睡著了' : d.work ? 'PRIVATE · 上班用' : d.unchecked ? '等待第一次巡房' : `ONLINE${d.ms !== null ? ` · ${d.ms}ms` : ''}`;
 	ctx.fillStyle = color;
 	ctx.beginPath();
 	ctx.arc(30, 156, 8, 0, Math.PI * 2);
@@ -165,6 +166,23 @@ export function screenTexture(d: Desk) {
 	ctx.fillStyle = color;
 	ctx.globalAlpha = 0.85;
 	ctx.fillRect(0, H - 10, W, 10);
+	return texture(c);
+}
+
+/** 公司那張桌子上的三角名牌 */
+export function deskSignTexture(text: string) {
+	const { c, ctx } = canvas2d(256, 96);
+	ctx.fillStyle = '#2b2d3a';
+	ctx.beginPath();
+	ctx.roundRect(0, 0, 256, 96, 14);
+	ctx.fill();
+	ctx.fillStyle = '#ffc861';
+	ctx.fillRect(0, 84, 256, 12);
+	ctx.fillStyle = '#ffffff';
+	ctx.textAlign = 'center';
+	ctx.textBaseline = 'middle';
+	ctx.font = `900 50px ${FONT}`;
+	ctx.fillText(text, 128, 44);
 	return texture(c);
 }
 

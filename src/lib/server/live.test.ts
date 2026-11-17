@@ -8,7 +8,8 @@ const desks = [
 	{ key: 'vercel:yiwallet-tools', id: 'yiwallet-tools', repo: 'https://github.com/doraeyi/YIWallet', url: null },
 	{ key: 'vm:site', id: 'site', repo: 'https://github.com/doraeyi/doraeyi.com', url: null },
 	{ key: 'vm:blog', id: 'blog', repo: null, url: 'https://blog.doraeyi.com' },
-	{ key: 'vm:home', id: 'home', repo: null, url: 'https://www.home.dev' }
+	{ key: 'vm:home', id: 'home', repo: null, url: 'https://www.home.dev' },
+	{ key: 'work:work', id: 'work', repo: null, url: null }
 ];
 
 describe('對到哪一張桌子', () => {
@@ -22,6 +23,10 @@ describe('對到哪一張桌子', () => {
 		expect(matchDesk(desks, 'doraeyi/doraeyi.com', 'whatever')).toBe('vm:site');
 		expect(matchDesk(desks, null, 'Blog')).toBe('vm:blog');
 		expect(matchDesk(desks, 'someone/else', 'nope')).toBeNull();
+	});
+
+	it('公司的專案只送 work，對到工作室那張不公開的桌子', () => {
+		expect(matchDesks(desks, null, 'work')).toEqual(['work:work']);
 	});
 
 	it('monorepo 拆成好幾個專案，每一張桌子都算', () => {

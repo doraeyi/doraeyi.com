@@ -50,6 +50,32 @@ function applyMeta(p: BaseProject, m: ProjectMeta | undefined): BaseProject {
 // 同一間房間裡輪流分配，保證機器人、貓、狗都會出現
 const KEEPERS: Keeper[] = ['robot', 'cat', 'dog'];
 
+/**
+ * 公司的專案：工作室裡固定一張桌子，名稱、程式、網址都不公開。
+ * 電腦上的 hook 在公司資料夾裡工作時只送 dir: 'work'（見 scripts/claude-presence.mjs），對到的就是這張桌子
+ */
+export const WORK_ID = 'work';
+function workDesk(keeper: Keeper): Unchecked {
+	return {
+		key: `work:${WORK_ID}`,
+		id: WORK_ID,
+		host: 'vercel',
+		title: '公司的專案',
+		description: '上班時用 Claude 寫的公司專案。名稱跟程式都不公開，這裡只看得到員工有沒有在忙。',
+		url: null,
+		repo: null,
+		framework: null,
+		tags: ['上班'],
+		featured: false,
+		accent: '',
+		createdAt: 0,
+		updatedAt: 0,
+		lastDeployAt: null,
+		state: 'UNKNOWN',
+		keeper
+	};
+}
+
 const loadBase = cached<Base>(5 * 60 * 1000, async () => {
 	const [profile, meta, vercel, vm] = await Promise.all([
 		safe('讀取 profile', getProfile, null),
@@ -89,7 +115,7 @@ const loadBase = cached<Base>(5 * 60 * 1000, async () => {
 
 	return {
 		profile: profile ?? fallbackProfile,
-		projects: [...vercelProjects, ...vmProjects],
+		projects: [...vercelProjects, workDesk(KEEPERS[vercelProjects.length % 3]), ...vmProjects],
 		source: { vercel: vercel !== null, database: profile !== null }
 	};
 });

@@ -105,6 +105,9 @@ doraeyi/
 - **Claude 在做事**：Claude Code 的 hook（`scripts/claude-presence.mjs`）在開工、呼叫工具（一分鐘最多一次）、做完一輪、關掉 session 時打 `POST /api/presence`，帶著 `PRESENCE_TOKEN`。呼叫工具時回報「做事中」，15 分鐘沒消息當作停了；做完一輪是「等回覆」，30 分鐘後消失
 - **push**：GitHub webhook 打 `POST /api/github`，用 `GITHUB_WEBHOOK_SECRET` 驗簽章（`X-Hub-Signature-256`）
 - 前端每 15 秒問一次 `GET /api/live`；剛打開網頁時，五分鐘內的 push 會補演一次
+- 公司的專案：工作室固定一張「公司」桌子，名稱、網址、程式都不公開，不巡房、不澆水。公司電腦上的 PowerShell 跑一行就裝好（`-AllWork`：這台電腦的每個 session 都只送 `work`，不送 git remote、資料夾名稱）：
+  `iwr https://raw.githubusercontent.com/doraeyi/doraeyi.com/main/scripts/install-hook.ps1 -OutFile $env:TEMP\doraeyi-hook.ps1; powershell -ExecutionPolicy Bypass -File $env:TEMP\doraeyi-hook.ps1 -AllWork`
+  只想讓某些資料夾算公司的，改用 `-WorkDir D:\Workspace`（寫進 `~/.claude/doraeyi-presence.json` 的 `workDirs`）
 - 哪個專案：看 Claude 實際動到的 repo（讀檔、改檔、搜尋帶的路徑，或 Bash 指令 `cd` 到的資料夾），以最後動到的為準；還沒動到檔案前先用 session 開在哪個資料夾
 - 對到哪張桌子：先比 repo（`owner/name`），對不到再拿資料夾名稱或 repo 名稱比專案代號、專案的 repo 名、網站網域（repo 叫 `doraeyi.com`、網站在 `doraeyi.com` 也算）。一個 monorepo 對到好幾個專案，每位管理員都會動；webhook 來的 repo 網站上沒有，就依名稱固定挑一位去澆水
 

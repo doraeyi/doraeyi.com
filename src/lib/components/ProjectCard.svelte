@@ -24,6 +24,8 @@
 		<span>管理員上次去看時{p.health?.note ?? '網站沒有回應'}，累到睡著了。等網站恢復，下一次巡房就會醒來。</span>
 	{:else if p.health}
 		<span>網站正常，管理員每 12 小時會再去看一次。</span>
+	{:else if p.key.startsWith('work:')}
+		<span>公司的專案沒有公開網址，也不會推到 GitHub，所以不巡房、不澆水；我在公司用 Claude 寫程式時，管理員會跟著一起忙。</span>
 	{:else}
 		<span>{p.url ? '還沒巡過這個專案，下一輪就會去看。' : '這個專案沒有公開網址，管理員只是坐著陪它。'}</span>
 	{/if}
@@ -34,7 +36,9 @@
 		<b>{busy === 'working' ? '正在改程式' : '改完一輪，等回覆中'}</b>
 		<span
 			>{busy === 'working'
-				? '我正在用 Claude 改這個專案，管理員盯著螢幕一起趕工。推上 GitHub 之後，它會跑去花園幫今天的樹澆水。'
+				? p.key.startsWith('work:')
+					? '我正在公司用 Claude 寫程式，管理員盯著螢幕一起趕工。'
+					: '我正在用 Claude 改這個專案，管理員盯著螢幕一起趕工。推上 GitHub 之後，它會跑去花園幫今天的樹澆水。'
 				: 'Claude 做完了一輪，管理員轉過來等下一步指示。'}</span
 		>
 	</div>
