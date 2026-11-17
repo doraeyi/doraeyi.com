@@ -20,7 +20,8 @@ async function main() {
 	if (!token) return;
 	let input = '';
 	for await (const chunk of process.stdin) input += chunk;
-	const hook = JSON.parse(input);
+	// 前面有 BOM 的話 JSON.parse 會失敗（某些 shell 用管線傳進來會帶）
+	const hook = JSON.parse(input.replace(/^﻿/, ''));
 	const event = hook.hook_event_name;
 	const session = hook.session_id;
 	const cwd = hook.cwd || process.cwd();
@@ -59,4 +60,10 @@ async function main() {
 	});
 }
 
-main().catch(() => {}).finally(() => process.exit(0));
+// 不要呼叫 process.exit：Windows 上 fetch 的連線還在收尾時硬結束，Node 會 assertion 失敗、回傳 9，
+// Claude Code 會把它當成 hook 出錯。讓它自然結束就好（逾時的計時器不會卡住程序）
+main()
+	.catch(() => {})
+	.finally(() => {
+		process.exitCode = 0;
+	});
