@@ -54,6 +54,8 @@ export interface KeeperState {
 	carry: boolean;
 	/** 澆水的程度 0~1：壺嘴往前倒 */
 	water: number;
+	/** 伸懶腰 0~1：等部署的時候在花園裡放鬆，機器人兩手舉高左右擺、貓狗身體往前伸 */
+	stretch: number;
 }
 
 export interface KeeperRig {
@@ -252,6 +254,7 @@ export function buildKeeper(kind: Keeper, variant: number, mat: THREE.Material, 
 
 	let walkAmt = 0;
 	let waterAmt = 0;
+	let stretchAmt = 0;
 
 	return {
 		root,
@@ -264,25 +267,30 @@ export function buildKeeper(kind: Keeper, variant: number, mat: THREE.Material, 
 				lookTarget = lookTarget === 0 ? s.lookAt : 0;
 				lookUntil = t + 2.5 + ((seed * 7 + t) % 3);
 			}
-			const away = s.walk > 0.01 || s.carry;
+			const away = s.walk > 0.01 || s.carry || s.stretch > 0;
 			const look = away ? 0 : s.busy === 'working' ? s.lookAt : s.busy === 'waiting' ? 0 : lookTarget;
 			const asleep = s.asleep && !away;
 			sit = damp(sit, asleep ? 1 : 0, 3, dt);
 			walkAmt = damp(walkAmt, s.walk, 8, dt);
 			waterAmt = damp(waterAmt, s.water, 4, dt);
+			stretchAmt = damp(stretchAmt, s.stretch, 3, dt);
+			// 伸懶腰時慢慢左右擺
+			const sway = Math.sin(t * 1.3 + phase);
 			headYaw = damp(headYaw, asleep ? 0 : look, 5, dt);
 			const nod = s.busy === 'working' && !away ? Math.sin(t * 5 + phase) * 0.05 + 0.08 : s.busy === 'waiting' && !away ? -0.12 : Math.sin(t * 1.3 + phase) * 0.06;
-			headPitch = damp(headPitch, asleep ? 0.5 : nod + waterAmt * 0.3, 3, dt);
+			headPitch = damp(headPitch, asleep ? 0.5 : nod + waterAmt * 0.3 - stretchAmt * 0.35, 3, dt);
 			// 等你回覆的時候歪著頭
 			const tilt = s.busy === 'waiting' && !away ? 0.22 + Math.sin(t * 1.1 + phase) * 0.05 : Math.sin(t * 0.9 + phase) * 0.05;
-			headRoll = damp(headRoll, asleep ? 0.28 : tilt, 3, dt);
+			headRoll = damp(headRoll, asleep ? 0.28 : tilt + stretchAmt * sway * 0.15, 3, dt);
 			head.rotation.set(headPitch, headYaw, headRoll);
 
 			const breathe = asleep ? Math.sin(t * 1.4 + phase) * 0.025 : 0;
 			const stride = t * 11 + phase;
-			body.scale.set(1 + breathe * 0.5, 1 - sit * 0.06 + breathe, 1 + breathe * 0.5);
+			body.scale.set(1 + breathe * 0.5, 1 - sit * 0.06 + breathe + stretchAmt * (0.05 + 0.04 * Math.sin(t * 2.6 + phase)), 1 + breathe * 0.5);
 			body.position.y = (1 - sit) * Math.abs(Math.sin(t * 2 + phase)) * 0.02 * (1 - walkAmt) + walkAmt * Math.abs(Math.sin(stride)) * 0.07;
-			body.rotation.z = walkAmt * Math.sin(stride) * 0.1;
+			body.rotation.z = walkAmt * Math.sin(stride) * 0.1 + stretchAmt * sway * 0.16;
+			// 貓狗伸懶腰：身體往前伸、屁股翹高
+			body.rotation.x = armR ? 0 : stretchAmt * (0.18 + 0.1 * Math.sin(t * 1.3 + phase));
 			can.visible = s.carry;
 			if (!armR) can.rotation.x = waterAmt * 1.1;
 
@@ -307,7 +315,7 @@ export function buildKeeper(kind: Keeper, variant: number, mat: THREE.Material, 
 
 			if (tail) {
 				const speed = kind === 'dog' ? 11 : 2.2;
-				const amp = asleep ? 0.05 : kind === 'dog' ? (s.busy === 'waiting' ? 0.9 : 0.6) : 0.35;
+				const amp = asleep ? 0.05 : kind === 'dog' ? (s.busy === 'waiting' || stretchAmt > 0.5 ? 0.9 : 0.6) : 0.35;
 				tail.rotation.y = Math.sin(t * speed + phase) * amp;
 			}
 			if (armL && armR) {
@@ -320,8 +328,11 @@ export function buildKeeper(kind: Keeper, variant: number, mat: THREE.Material, 
 				armR.rotation.x = s.carry ? -0.3 - waterAmt * 0.2 : -typing * 0.9 + Math.sin(t * speed + phase + 1.6) * 0.12 * typing - sit * 0.2 - swing;
 				// 等你回覆的時候舉起左手揮一揮
 				const wave = s.busy === 'waiting' && !away ? 1 : 0;
-				armL.rotation.z = -0.15 - sit * 0.1 - wave * (2.3 + Math.sin(t * 6 + phase) * 0.3);
-				armR.rotation.z = 0.15 + sit * 0.1;
+				// 伸懶腰：兩手舉高，跟著身體慢慢左右擺
+				armL.rotation.z = -0.15 - sit * 0.1 - wave * (2.3 + Math.sin(t * 6 + phase) * 0.3) - stretchAmt * (2.6 + sway * 0.2);
+				armR.rotation.z = 0.15 + sit * 0.1 + stretchAmt * (2.6 - sway * 0.2);
+				armL.rotation.x *= 1 - stretchAmt;
+				armR.rotation.x *= 1 - stretchAmt;
 				can.rotation.x = s.carry ? 0.3 + waterAmt * 1.1 : 0;
 			}
 			if (lamp && lampMat) {

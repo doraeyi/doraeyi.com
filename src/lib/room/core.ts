@@ -98,26 +98,35 @@ interface DeskView {
 	next: Watering | null;
 }
 
-/**
- * 去花園澆今天那棵樹：沿著 path（世界座標，y 不用，高度看腳下的地板）走過去，
- * 從開始 push 一直澆到部署完成，樹長大之後再原路走回來
- */
-interface Trip {
+/** 一段路：沿著 path（世界座標，y 不用，高度看腳下的地板）走，d 是走了多遠 */
+interface Walk {
 	path: THREE.Vector3[];
 	/** 每一段的長度、全長 */
 	lens: number[];
 	total: number;
-	phase: 'go' | 'water' | 'back';
-	/** 沿著路線走了多遠 */
 	d: number;
-	/** 在樹旁邊澆了幾秒 */
-	watered: number;
+	/** 公尺／秒：趕路 1.5、散步慢一點 */
+	speed: number;
+}
+
+/**
+ * 去花園澆今天那棵樹，一次 push 從開始到部署完成：
+ *   go：走到樹旁邊 → water：澆 10～15 秒 → 還在部署就 stroll（散步）／stretch（伸懶腰）輪流，放鬆到部署完 →
+ *   return：走回樹旁邊 → cheer：樹長大、開心跳一下 → home：走回位子
+ * 澆完水時部署已經好了，就直接 cheer
+ */
+interface Trip {
+	mode: 'go' | 'water' | 'stroll' | 'stretch' | 'return' | 'cheer' | 'home';
+	/** 正在走的那段路；走到了就是 null */
+	walk: Walk | null;
+	/** 這個動作做了幾秒 */
+	timer: number;
+	/** 這個動作要做幾秒（澆水 10～15 秒、伸懶腰 3～6 秒） */
+	until: number;
 	/** 這一趟澆的是哪幾次 push（澆到一半又 push 就併進來）：id → { 幾個 commit、部署完了沒 } */
 	pushes: Map<number, { commits: number; done: boolean }>;
-	/** 樹長大的時間；長完再澆一下就收工 */
-	grownAt: number | null;
-	/** 站在樹旁邊第幾個位置（同時好幾位在澆就排開） */
-	slot: number;
+	/** 站在樹旁邊的位置（同時好幾位在澆就排開） */
+	stand: THREE.Vector3;
 	yaw: number;
 }
 
@@ -889,26 +898,39 @@ export function createRoom(
 		return true;
 	};
 
-	/** 從座位走到今天那棵樹旁邊第 slot 個位置的路線 */
-	function tripPath(dv: DeskView, slot: number): THREE.Vector3[] {
-		const seat = new THREE.Vector3(dv.x + SEAT.x, 0, dv.z + SEAT.z);
-		const spot = treeSpot(today);
-		// 站在花圃右邊、今天那一格旁邊；好幾位一起澆就往前後排開
-		const want = freeNear(carpet!.x + carpet!.w / 2 + 0.38, spot.z + [0, 0.5, -0.5][slot % 3]);
-		// 直接從座位開始找：座位在自己的碰撞範圍裡，那一塊不算障礙（不能先「瞬移」到最近的空位，那可能在玻璃外面）
-		const cells = findPath(seat.x, seat.z, want.x, want.z, dv.seatBlock);
-		if (!cells) return [seat, seat.clone()];
+	/** 從 from 走到 to 的路線（拉直過的轉角）；own：自己座位那一塊不算障礙（從座位出發、走回座位時用） */
+	function route(from: THREE.Vector3, to: THREE.Vector3, own: DeskView['seatBlock']): THREE.Vector3[] {
+		const cells = findPath(from.x, from.z, to.x, to.z, own);
+		if (!cells) return [from.clone(), from.clone()];
 		// 拉直：從目前的點一路往後看，能直直走到的最遠那個點就是下一個轉角
-		const pts = [seat];
+		const pts = [from.clone()];
 		let i = 0;
 		while (i < cells.length - 1) {
 			let j = i + 1;
-			while (j + 1 < cells.length && clearLine(cells[i], cells[j + 1], dv.seatBlock)) j++;
+			while (j + 1 < cells.length && clearLine(cells[i], cells[j + 1], own)) j++;
 			pts.push(cells[j]);
 			i = j;
 		}
-		pts.push(new THREE.Vector3(want.x, 0, want.z));
+		pts.push(to.clone());
 		return pts.filter((p, k) => k === 0 || p.distanceTo(pts[k - 1]) > 0.01);
+	}
+	const walkTo = (from: THREE.Vector3, to: THREE.Vector3, own: DeskView['seatBlock'], speed = WALK_SPEED): Walk => {
+		const path = route(from, to, own);
+		const lens = path.slice(1).map((p, i) => p.distanceTo(path[i]));
+		return { path, lens, total: lens.reduce((x, y) => x + y, 0), d: 0, speed };
+	};
+	const seatOf = (dv: DeskView) => new THREE.Vector3(dv.x + SEAT.x, 0, dv.z + SEAT.z);
+	/** 管理員現在站在哪（世界座標） */
+	const posOf = (dv: DeskView) => new THREE.Vector3(dv.carrier.position.x + dv.x, 0, dv.carrier.position.z + dv.z);
+	/** 散步的下一個點：樹附近 1.2～3.5 公尺內、花園或露台上走得到的地方 */
+	function strollSpot(tr: Trip) {
+		for (let k = 0; k < 12; k++) {
+			const a = Math.random() * Math.PI * 2;
+			const r = 1.2 + Math.random() * 2.3;
+			const p = freeNear(tr.stand.x + Math.cos(a) * r, tr.stand.z + Math.sin(a) * r);
+			if (p.z > front + 0.4 && Math.abs(p.x) < S / 2 - 0.4 && p.z < S / 2 - 0.4) return new THREE.Vector3(p.x, 0, p.z);
+		}
+		return tr.stand.clone();
 	}
 
 	/** 減少動態：不走過去，部署完成時樹直接長大；這裡記著還沒澆完的 push */
@@ -916,81 +938,106 @@ export function createRoom(
 	function startTrip(dv: DeskView, w: Watering, t: number) {
 		dv.jumpAt = t;
 		if (!carpet || today < 0) return;
-		const slot = desks.filter((d) => d.trip && d.trip.phase !== 'back').length;
-		const path = tripPath(dv, slot);
-		const lens = path.slice(1).map((p, i) => p.distanceTo(path[i]));
+		const slot = desks.filter((d) => d.trip && d.trip.mode !== 'home').length;
+		const spot = treeSpot(today);
+		// 站在花圃右邊、今天那一格旁邊；好幾位一起澆就往前後排開
+		const p = freeNear(carpet.x + carpet.w / 2 + 0.38, spot.z + [0, 0.5, -0.5][slot % 3]);
+		const stand = new THREE.Vector3(p.x, 0, p.z);
 		dv.trip = {
-			path,
-			lens,
-			total: lens.reduce((a, b) => a + b, 0),
-			phase: 'go',
-			d: 0,
-			watered: 0,
+			mode: 'go',
+			// 直接從座位開始找路：座位在自己的碰撞範圍裡，那一塊不算障礙（不能先瞬移到最近的空位，那可能在玻璃外面）
+			walk: walkTo(seatOf(dv), stand, dv.seatBlock),
+			timer: 0,
+			until: 0,
 			pushes: new Map([[w.id, { commits: w.commits, done: w.phase === 'done' }]]),
-			grownAt: null,
-			slot,
+			stand,
 			yaw: SEAT_YAW
 		};
 	}
 
+	/** 這一趟的 push 是不是都部署完了；是的話樹長大 */
+	const allDone = (tr: Trip) => [...tr.pushes.values()].every((p) => p.done);
+	const growFor = (tr: Trip, t: number) =>
+		growToday(
+			[...tr.pushes.values()].reduce((n, p) => n + p.commits, 0),
+			t
+		);
+
 	const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 	const tripPos = new THREE.Vector3();
-	/** 往前走一幀；回傳管理員這一幀的動作，走回座位了回傳 null */
+	/** 往前一幀；回傳管理員這一幀的動作，走回座位了回傳 null */
 	function stepTrip(dv: DeskView, t: number, dt: number) {
 		const tr = dv.trip!;
-		let face: number;
+		const spot = treeSpot(today);
+		let face = tr.yaw;
 		let water = 0;
-		if (tr.phase === 'water') {
-			tr.watered += dt;
-			tripPos.copy(tr.path[tr.path.length - 1]);
-			const spot = treeSpot(today);
-			face = Math.atan2(spot.x - tripPos.x, spot.z - tripPos.z);
-			// 部署全部完成才讓樹長大；至少要先澆一下下
-			const all = [...tr.pushes.values()];
-			if (tr.grownAt === null && tr.watered > 1.5 && all.every((p) => p.done)) {
-				growToday(
-					all.reduce((n, p) => n + p.commits, 0),
-					t
-				);
-				tr.grownAt = t;
-			}
-			water = tr.watered > 0.4 && (tr.grownAt === null || t - tr.grownAt < 1.6) ? 1 : 0;
-			if (tr.grownAt !== null && t - tr.grownAt > 2.4) {
-				tr.phase = 'back';
-				tr.d = tr.total;
+		let stretch = 0;
+		const set = (mode: Trip['mode'], until = 0) => Object.assign(tr, { mode, timer: 0, until });
+		const go = (mode: Trip['mode'], to: THREE.Vector3, speed?: number) => {
+			tr.walk = walkTo(posOf(dv), to, dv.seatBlock, speed);
+			set(mode);
+		};
+
+		if (tr.walk) {
+			const w = tr.walk;
+			w.d += w.speed * dt;
+			// 找出現在走在哪一段上
+			let d = clamp(w.d, 0, w.total);
+			let i = 0;
+			while (i < w.lens.length - 1 && d > w.lens[i]) d -= w.lens[i++];
+			const a = w.path[i];
+			const b = w.path[i + 1] ?? a;
+			tripPos.lerpVectors(a, b, w.lens[i] ? clamp(d / w.lens[i], 0, 1) : 1);
+			if (b !== a) face = Math.atan2(b.x - a.x, b.z - a.z);
+			// 散步途中部署好了：不用走完，直接回樹旁邊
+			if (tr.mode === 'stroll' && allDone(tr)) go('return', tr.stand);
+			else if (w.d >= w.total) {
+				tr.walk = null;
+				if (tr.mode === 'go') set('water', 10 + Math.random() * 5);
+				else if (tr.mode === 'stroll') set('stretch', 3 + Math.random() * 3);
+				else if (tr.mode === 'return') {
+					growFor(tr, t);
+					dv.jumpAt = t;
+					set('cheer', 2.6);
+				} else if (tr.mode === 'home') {
+					dv.trip = null;
+					dv.carrier.position.copy(SEAT);
+					dv.carrier.rotation.y = SEAT_YAW;
+					// 走回來的路上又有 push：坐下馬上再出發
+					if (dv.next) {
+						startTrip(dv, dv.next, t);
+						dv.next = null;
+					}
+					return null;
+				}
 			}
 		} else {
-			const dir = tr.phase === 'go' ? 1 : -1;
-			tr.d += dir * WALK_SPEED * dt;
-			if (tr.phase === 'go' && tr.d >= tr.total) {
-				tr.phase = 'water';
-				tr.d = tr.total;
-			} else if (tr.phase === 'back' && tr.d <= 0) {
-				dv.trip = null;
-				dv.carrier.position.copy(SEAT);
-				dv.carrier.rotation.y = SEAT_YAW;
-				// 走回來的路上又有 push：坐下馬上再出發
-				if (dv.next) {
-					startTrip(dv, dv.next, t);
-					dv.next = null;
+			tr.timer += dt;
+			tripPos.copy(posOf(dv));
+			if (tr.mode === 'water' || tr.mode === 'cheer') face = Math.atan2(spot.x - tripPos.x, spot.z - tripPos.z);
+			if (tr.mode === 'water') {
+				water = tr.timer > 0.4 && tr.timer < tr.until - 0.3 ? 1 : 0;
+				if (tr.timer >= tr.until) {
+					if (allDone(tr)) {
+						// 澆完剛好部署也好了：樹當場長大
+						growFor(tr, t);
+						dv.jumpAt = t;
+						set('cheer', 2.6);
+					} else go('stroll', strollSpot(tr), 0.8);
 				}
-				return null;
+			} else if (tr.mode === 'stretch') {
+				stretch = 1;
+				if (allDone(tr)) go('return', tr.stand);
+				else if (tr.timer >= tr.until) go('stroll', strollSpot(tr), 0.8);
+			} else if (tr.mode === 'cheer' && tr.timer >= tr.until) {
+				go('home', seatOf(dv));
 			}
-			// 找出現在走在哪一段上
-			let d = clamp(tr.d, 0, tr.total);
-			let i = 0;
-			while (i < tr.lens.length - 1 && d > tr.lens[i]) d -= tr.lens[i++];
-			const a = tr.path[i];
-			const b = tr.path[i + 1];
-			const k = tr.lens[i] ? clamp(d / tr.lens[i], 0, 1) : 1;
-			tripPos.lerpVectors(a, b, k);
-			face = Math.atan2((b.x - a.x) * dir, (b.z - a.z) * dir);
 		}
 		tripPos.y = footY(tripPos.z);
 		tr.yaw += wrapAngle(face - tr.yaw) * (1 - Math.exp(-10 * dt));
 		dv.carrier.position.set(tripPos.x - dv.x, tripPos.y - PLINTH, tripPos.z - dv.z);
 		dv.carrier.rotation.y = tr.yaw;
-		return { walk: tr.phase === 'water' ? 0 : 1, water };
+		return { walk: tr.walk ? (tr.walk.speed < 1 ? 0.6 : 1) : 0, water, stretch, carry: !['stroll', 'stretch'].includes(tr.mode) };
 	}
 
 	// 澆水的水滴：從壺嘴往前、往下灑到樹根附近，不會往上噴。最多三位管理員同時澆，一人 24 滴
@@ -1133,7 +1180,8 @@ export function createRoom(
 		vercel: { light: ['#e0c59c', '#dec39a', '#e2c79f'], inlay: ['#b88b58', '#b48754', '#bb8f5c'], pattern: PATTERN.planks, gap: false },
 		vm: { light: ['#7f8ca1', '#7a879c', '#8491a5'], inlay: ['#56627a', '#525e75', '#5a667e'], pattern: PATTERN.panel, gap: true },
 		foyer: { light: ['#d9cfc0', '#d4c9b9', '#ddd4c6'], inlay: ['#a8998a', '#a49585', '#ac9d8e'], pattern: PATTERN.stone, gap: true },
-		deck: { light: ['#d2b48c', '#cdae86', '#d6b992'], pattern: PATTERN.planks, gap: false },
+		// 露台的深色格子跟房子裡一樣用深一階的木頭拼花，不種草叢，房子前面才是一條走得過去的通道
+		deck: { light: ['#d2b48c', '#cdae86', '#d6b992'], inlay: ['#a9865c', '#a58258', '#ad8a60'], pattern: PATTERN.planks, gap: false },
 		garden: { light: ['#e9e3d6', '#e4ddcf', '#eee8dc'], pattern: PATTERN.gravel, gap: false }
 	};
 	const qrDark = (r: number, c: number) => world.qr.bits[r * qrN + c] === '1';
@@ -1158,10 +1206,10 @@ export function createRoom(
 					tiles.push({ x, z, h: PLINTH + 0.05, color, gap: theme.gap, pattern: theme.pattern });
 					continue;
 				}
-				// 花圃底下的深色格子平平的藏在土下面，其他深色格子長成高低不一的草叢
-				const bush = dark && !inCarpet(x, z);
+				// 花圃底下的深色格子平平的藏在土下面，露台的深色格子是木頭拼花，花園裡其他深色格子長成高低不一的草叢
+				const bush = dark && zone === 'garden' && !inCarpet(x, z);
 				const h = bush ? 0.16 + 0.22 * (Math.sin(c * 0.7 + 0.4) * Math.cos(r * 0.55) + 1) + rand() * 0.12 : zone === 'deck' ? 0.1 : 0.05;
-				const color = new THREE.Color(dark ? BUSH : pick(theme.light));
+				const color = new THREE.Color(dark ? (zone === 'deck' ? pick(theme.inlay!) : BUSH) : pick(theme.light));
 				if (bush) {
 					color.offsetHSL(0, 0, (rand() - 0.5) * 0.08);
 					// 草叢走不過去，花園就像一座小迷宮；碰撞範圍比草叢小一圈，隔一格的草叢之間才鑽得過去
@@ -1981,8 +2029,10 @@ export function createRoom(
 				lookAt: -0.95,
 				busy: dv.busy,
 				walk: act?.walk ?? 0,
-				carry: dv.trip !== null,
-				water: act?.water ?? 0
+				// 散步、伸懶腰時把澆水壺放下（收起來）
+				carry: act?.carry ?? false,
+				water: act?.water ?? 0,
+				stretch: act?.stretch ?? 0
 			});
 			dv.code.visible = dv.busy === 'working';
 			// 泡泡：在位子上才冒，一上一下輕輕飄
@@ -2283,7 +2333,7 @@ export function createRoom(
 				// 打開網頁之前就澆完的不演
 				if (done) continue;
 				if (!dv.trip) startTrip(dv, w, t);
-				else if (dv.trip.phase !== 'back' && dv.trip.grownAt === null) dv.trip.pushes.set(w.id, { commits: w.commits, done });
+				else if (!['cheer', 'home'].includes(dv.trip.mode)) dv.trip.pushes.set(w.id, { commits: w.commits, done });
 				else dv.next = w;
 			}
 		},
