@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { bake, box, buildKeeper, cone, cyl, m4, sphere, type KeeperRig, type Part } from './keepers.js';
 import type { Focus, FromScene, SceneOptions, SceneStats, Tier } from './protocol.js';
 import { addDetail, PATTERN } from './detail.js';
-import type { DeskState, LiveData } from '#lib/types.js';
+import type { DeskState, LiveData, Watering } from '#lib/types.js';
 import {
 	blobTexture,
 	bubbleTexture,
@@ -35,8 +35,6 @@ const SEAT = new THREE.Vector3(0.98, 0.05, 0.12);
 const SEAT_YAW = -0.65;
 /** 去花園澆水的走路速度（公尺／秒） */
 const WALK_SPEED = 1.5;
-/** 站在樹旁邊澆多久（秒） */
-const WATER_SECS = 3.4;
 
 const raf: (cb: (t: number) => void) => number =
 	typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (cb) => setTimeout(() => cb(performance.now()), 16) as unknown as number;
@@ -85,6 +83,8 @@ interface DeskView {
 	pops: THREE.Object3D[];
 	/** 管理員整組（去花園時搬出去），在桌子的座標系裡 */
 	carrier: THREE.Group;
+	/** 坐著的管理員自己的碰撞範圍；自己出門找路時這一塊不算障礙 */
+	seatBlock: [number, number, number, number];
 	/** Claude 的狀態 */
 	busy: DeskState | null;
 	/** Claude 在做事時蓋在螢幕上的程式碼 */
@@ -94,23 +94,30 @@ interface DeskView {
 	bubbleY: number;
 	/** 正在去花園澆水的路上（null = 在位子上） */
 	trip: Trip | null;
-	/** 從座位走到玄關自動門內側的路線（世界座標）：走道 → 房間側門 → 玄關 → 門口 */
-	exit: THREE.Vector3[];
+	/** 走回座位時又有新的 push：坐下之後馬上再出發 */
+	next: Watering | null;
 }
 
-/** 去花園澆今天那棵樹：沿著 path（世界座標）走過去、澆水、原路走回來 */
+/**
+ * 去花園澆今天那棵樹：沿著 path（世界座標，y 不用，高度看腳下的地板）走過去，
+ * 從開始 push 一直澆到部署完成，樹長大之後再原路走回來
+ */
 interface Trip {
 	path: THREE.Vector3[];
 	/** 每一段的長度、全長 */
 	lens: number[];
 	total: number;
 	phase: 'go' | 'water' | 'back';
-	/** 走了多遠／澆了幾秒 */
+	/** 沿著路線走了多遠 */
 	d: number;
-	/** 這次 push 了幾個 commit，樹會長大這麼多 */
-	commits: number;
-	/** 樹已經長大過了（再收到 push 就直接再長一次） */
-	grown: boolean;
+	/** 在樹旁邊澆了幾秒 */
+	watered: number;
+	/** 這一趟澆的是哪幾次 push（澆到一半又 push 就併進來）：id → { 幾個 commit、部署完了沒 } */
+	pushes: Map<number, { commits: number; done: boolean }>;
+	/** 樹長大的時間；長完再澆一下就收工 */
+	grownAt: number | null;
+	/** 站在樹旁邊第幾個位置（同時好幾位在澆就排開） */
+	slot: number;
 	yaw: number;
 }
 
@@ -534,27 +541,13 @@ export function createRoom(
 			addHit(desk.key, wx + 0.35, PLINTH + 0.7, wz + 0.05, 2.2, 1.6, 1.5);
 			// 桌子（以桌腳為準）跟坐在旁邊的管理員；抓得剛好就好，桌子之間才留得出走道
 			block(wx - 0.66, wz - 0.34, wx + 0.66, wz + 0.34);
-			block(wx + 0.78, wz - 0.1, wx + 1.18, wz + 0.36);
-
-			// 出門：往右踏到兩排桌子中間的直走道，走到側門那條橫走道，穿過側門進玄關，再走到自動門前面
-			const floorY = PLINTH + SEAT.y;
-			const innerX = rv.x - sideX;
-			const toRoom = Math.sign(rv.x - innerX);
-			const aisleZ = rv.z + doorZ;
-			const lane = wx + 1.55;
-			const exit = [
-				new THREE.Vector3(wx + SEAT.x, floorY, wz + SEAT.z),
-				new THREE.Vector3(lane, floorY, wz + 0.3),
-				new THREE.Vector3(lane, floorY, aisleZ),
-				new THREE.Vector3(innerX + toRoom * 0.5, floorY, aisleZ),
-				new THREE.Vector3(innerX - toRoom * 0.5, floorY, aisleZ),
-				new THREE.Vector3(hallX, floorY, aisleZ),
-				new THREE.Vector3(hallX, floorY, front - 0.05)
-			];
+			const seatBlock: [number, number, number, number] = [wx + 0.78, wz - 0.1, wx + 1.18, wz + 0.36];
+			block(...seatBlock);
 
 			desks.push({
 				desk,
-				exit,
+				next: null,
+				seatBlock,
 				x: wx,
 				z: wz,
 				rig,
@@ -775,8 +768,6 @@ export function createRoom(
 		crowns.instanceMatrix.needsUpdate = true;
 	};
 	setTrees(reduced ? 99 : 0);
-	/** 今天那棵樹的樹冠頂端，水滴往這裡灑 */
-	const todayTop = (t: number) => treeSpot(today).setY(0.12 + todayH(t) * 1.1);
 	/** 澆完水樹長大：commits 是這次 push 了幾個 */
 	const growToday = (commits: number, t: number) => {
 		if (!crowns || today < 0) return;
@@ -789,83 +780,157 @@ export function createRoom(
 	};
 
 	// ---- 管理員去花園澆水 ----
-	// 房子裡照固定路線走（DeskView.exit）：走道 → 房間側門 → 玄關 → 自動門。
-	// 出了門就在 QR 的格子上找路（BFS），繞過草叢跟花圃，走到今天那棵樹的旁邊
-	const V = THREE.Vector3;
-	const groundY = (z: number) => (z < front ? PLINTH + SEAT.y : z < deckFront ? 0.1 : 0.05);
-	const cellFree = (r: number, c: number) => {
-		if (r < buildRows || r >= gridN || c < 0 || c >= gridN) return false;
-		const x = -S / 2 + (c + 0.5) * C;
-		const z = back + (r + 0.5) * C;
-		return !blocks.some(([x0, z0, x1, z1]) => x > x0 - 0.05 && x < x1 + 0.05 && z > z0 - 0.05 && z < z1 + 0.05);
+	// 找路用「走進去」那張 10 公分一格的碰撞地圖：牆只在門口留縫，桌子、坐著的管理員、機櫃、落地玻璃、
+	// 草叢、花圃都標在上面。在上面跑 A*，再把能直直走過去的轉角拉直，所以管理員一定是從房間側門進玄關、
+	// 穿過自動門出去，繞過所有東西走到今天那棵樹旁邊。
+	// 一次 push 從開始到部署完成都在澆（見 types.ts 的 Watering）：走到了就一直澆，部署完樹才長大，再走回位子
+	/** 腳下的地板有多高：房子墊高一階、露台、花園；跨下房子那一階時跳一下 */
+	const footY = (z: number) => {
+		const step = (edge: number, from: number, to: number) => from + (to - from) * smooth(clamp((z - edge) / 0.3 + 0.5, 0, 1));
+		const hop = Math.max(0, 1 - Math.abs(z - front) / 0.2) * 0.1;
+		return (z < (front + deckFront) / 2 ? step(front, PLINTH + SEAT.y, 0.1) : step(deckFront, 0.1, 0.05)) + hop;
 	};
-	function tripPath(dv: DeskView): THREE.Vector3[] {
-		const spot = treeSpot(today);
-		const stand = new V(carpet!.x + carpet!.w / 2 + 0.38, 0.05, spot.z);
-		const indoor = dv.exit;
 
-		// 起點：自動門外面第一排格子裡最近的空格；終點：離站的位置最近的空格
-		const cellOf = (x: number, z: number) => [Math.floor((z - back) / C), Math.floor((x + S / 2) / C)] as const;
-		const nearestFree = (x: number, z: number) => {
-			const [r0, c0] = cellOf(x, z);
-			for (let rad = 0; rad < 4; rad++)
-				for (let dr = -rad; dr <= rad; dr++)
-					for (let dc = -rad; dc <= rad; dc++)
-						if (Math.max(Math.abs(dr), Math.abs(dc)) === rad && cellFree(r0 + dr, c0 + dc)) return [r0 + dr, c0 + dc] as const;
-			return null;
+	/** (x, z) 在不在自己座位那一塊裡（含人的半徑） */
+	const inSeat = (own: DeskView['seatBlock'], x: number, z: number) => x > own[0] - R && x < own[2] + R && z > own[1] - R && z < own[3] + R;
+	/**
+	 * 碰撞地圖上的 A*（八個方向，斜走不能切牆角），回傳一串格子中心；找不到路是 null。
+	 * 真的有東西的格子（solid）不能走；離東西不到人的半徑（occ）可以走但貴六倍，平常會繞得離東西遠一點，
+	 * 只有剛從座位站起來那一小段會貼著桌子。own：自己座位那一塊不算障礙
+	 */
+	function findPath(fx: number, fz: number, tx: number, tz: number, own: DeskView['seatBlock']): THREE.Vector3[] | null {
+		occ ??= occupancy();
+		solid ??= occupancy(0.05);
+		const near = occ;
+		const wall = solid;
+		const cx = (n: number) => -S / 2 + ((n % gN) + 0.5) * GRID;
+		const cz = (n: number) => -S / 2 + (Math.floor(n / gN) + 0.5) * GRID;
+		const mine = new Uint8Array(gN * gN);
+		for (let n = 0; n < mine.length; n++) if (inSeat(own, cx(n), cz(n))) mine[n] = 1;
+		const blocked = (n: number) => wall[n] && !mine[n];
+		const cell = (v: number) => clamp(Math.floor((v + S / 2) / GRID), 0, gN - 1);
+		const start = cell(fz) * gN + cell(fx);
+		const goal = cell(tz) * gN + cell(tx);
+		const gi = goal % gN;
+		const gj = Math.floor(goal / gN);
+		const h = (n: number) => {
+			const dx = Math.abs((n % gN) - gi);
+			const dz = Math.abs(Math.floor(n / gN) - gj);
+			return Math.max(dx, dz) + 0.414 * Math.min(dx, dz);
 		};
-		const from = nearestFree(hallX, front + C / 2);
-		const to = nearestFree(stand.x, stand.z);
-		const route: THREE.Vector3[] = [];
-		if (from && to) {
-			const id = (r: number, c: number) => r * gridN + c;
-			const goal = id(...to);
-			const prev = new Map<number, number>([[id(...from), -1]]);
-			const queue = [id(...from)];
-			for (let i = 0; i < queue.length && !prev.has(goal); i++) {
-				const r = Math.floor(queue[i] / gridN);
-				const c = queue[i] % gridN;
-				for (const [nr, nc] of [
-					[r + 1, c],
-					[r - 1, c],
-					[r, c + 1],
-					[r, c - 1]
-				])
-					if (cellFree(nr, nc) && !prev.has(id(nr, nc))) {
-						prev.set(id(nr, nc), queue[i]);
-						queue.push(id(nr, nc));
+		const cost = new Float32Array(gN * gN).fill(Infinity);
+		const prev = new Int32Array(gN * gN).fill(-1);
+		// 最小堆：[f, 格子]
+		const heap: [number, number][] = [];
+		const push = (f: number, n: number) => {
+			heap.push([f, n]);
+			for (let i = heap.length - 1; i > 0; ) {
+				const p = (i - 1) >> 1;
+				if (heap[p][0] <= heap[i][0]) break;
+				[heap[p], heap[i]] = [heap[i], heap[p]];
+				i = p;
+			}
+		};
+		const pop = () => {
+			const top = heap[0];
+			const last = heap.pop()!;
+			if (heap.length) {
+				heap[0] = last;
+				for (let i = 0; ; ) {
+					const l = i * 2 + 1;
+					const r = l + 1;
+					let m = i;
+					if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
+					if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
+					if (m === i) break;
+					[heap[m], heap[i]] = [heap[i], heap[m]];
+					i = m;
+				}
+			}
+			return top;
+		};
+		cost[start] = 0;
+		push(h(start), start);
+		while (heap.length) {
+			const [, n] = pop();
+			if (n === goal) break;
+			const i = n % gN;
+			const j = Math.floor(n / gN);
+			for (let dj = -1; dj <= 1; dj++)
+				for (let di = -1; di <= 1; di++) {
+					if (!di && !dj) continue;
+					const ni = i + di;
+					const nj = j + dj;
+					if (ni < 0 || nj < 0 || ni >= gN || nj >= gN) continue;
+					const m = nj * gN + ni;
+					if (blocked(m) || (di && dj && (blocked(j * gN + ni) || blocked(nj * gN + i)))) continue;
+					const c = cost[n] + (di && dj ? 1.414 : 1) * (near[m] && !mine[m] ? 6 : 1);
+					if (c < cost[m]) {
+						cost[m] = c;
+						prev[m] = n;
+						push(c + h(m), m);
 					}
-			}
-			for (let k = prev.has(goal) ? goal : -1; k >= 0; k = prev.get(k)!) {
-				const x = -S / 2 + ((k % gridN) + 0.5) * C;
-				const z = back + (Math.floor(k / gridN) + 0.5) * C;
-				route.unshift(new V(x, groundY(z), z));
-			}
+				}
 		}
-		// 一直線上中間的點拿掉，走起來才不會一格一格頓
-		return [...indoor, ...route, stand].filter((p, i, a) => {
-			if (i === 0 || i === a.length - 1) return true;
-			const u = p.clone().sub(a[i - 1]);
-			const w = a[i + 1].clone().sub(p);
-			return Math.abs(u.x * w.z - u.z * w.x) > 1e-4 || u.dot(w) < 0 || Math.abs(u.y) > 0.01;
-		});
+		if (prev[goal] < 0 && goal !== start) return null;
+		const cells: THREE.Vector3[] = [];
+		for (let n = goal; n >= 0; n = prev[n]) cells.unshift(new THREE.Vector3(cx(n), 0, cz(n)));
+		return cells;
 	}
 
-	function startTrip(dv: DeskView, commits: number, t: number) {
+	/** 兩點之間每 5 公分檢查一次，都走得過去（或是在自己座位那一塊裡）就能直直走 */
+	const clearLine = (a: THREE.Vector3, b: THREE.Vector3, own: DeskView['seatBlock']) => {
+		const n = Math.ceil(a.distanceTo(b) / 0.05);
+		for (let k = 1; k < n; k++) {
+			const x = a.x + ((b.x - a.x) * k) / n;
+			const z = a.z + ((b.z - a.z) * k) / n;
+			if (!walkable(x, z) && !inSeat(own, x, z)) return false;
+		}
+		return true;
+	};
+
+	/** 從座位走到今天那棵樹旁邊第 slot 個位置的路線 */
+	function tripPath(dv: DeskView, slot: number): THREE.Vector3[] {
+		const seat = new THREE.Vector3(dv.x + SEAT.x, 0, dv.z + SEAT.z);
+		const spot = treeSpot(today);
+		// 站在花圃右邊、今天那一格旁邊；好幾位一起澆就往前後排開
+		const want = freeNear(carpet!.x + carpet!.w / 2 + 0.38, spot.z + [0, 0.5, -0.5][slot % 3]);
+		// 直接從座位開始找：座位在自己的碰撞範圍裡，那一塊不算障礙（不能先「瞬移」到最近的空位，那可能在玻璃外面）
+		const cells = findPath(seat.x, seat.z, want.x, want.z, dv.seatBlock);
+		if (!cells) return [seat, seat.clone()];
+		// 拉直：從目前的點一路往後看，能直直走到的最遠那個點就是下一個轉角
+		const pts = [seat];
+		let i = 0;
+		while (i < cells.length - 1) {
+			let j = i + 1;
+			while (j + 1 < cells.length && clearLine(cells[i], cells[j + 1], dv.seatBlock)) j++;
+			pts.push(cells[j]);
+			i = j;
+		}
+		pts.push(new THREE.Vector3(want.x, 0, want.z));
+		return pts.filter((p, k) => k === 0 || p.distanceTo(pts[k - 1]) > 0.01);
+	}
+
+	/** 減少動態：不走過去，部署完成時樹直接長大；這裡記著還沒澆完的 push */
+	const quietWater = new Map<number, number>();
+	function startTrip(dv: DeskView, w: Watering, t: number) {
 		dv.jumpAt = t;
-		if (!carpet || today < 0 || reduced) {
-			// 沒有花圃（GitHub 抓不到）就跳一下；減少動態就不走過去，樹直接長大
-			if (carpet && today >= 0) growToday(commits, t);
-			return;
-		}
-		if (dv.trip) {
-			if (dv.trip.grown) growToday(commits, t);
-			else dv.trip.commits += commits;
-			return;
-		}
-		const path = tripPath(dv);
+		if (!carpet || today < 0) return;
+		const slot = desks.filter((d) => d.trip && d.trip.phase !== 'back').length;
+		const path = tripPath(dv, slot);
 		const lens = path.slice(1).map((p, i) => p.distanceTo(path[i]));
-		dv.trip = { path, lens, total: lens.reduce((a, b) => a + b, 0), phase: 'go', d: 0, commits, grown: false, yaw: SEAT_YAW };
+		dv.trip = {
+			path,
+			lens,
+			total: lens.reduce((a, b) => a + b, 0),
+			phase: 'go',
+			d: 0,
+			watered: 0,
+			pushes: new Map([[w.id, { commits: w.commits, done: w.phase === 'done' }]]),
+			grownAt: null,
+			slot,
+			yaw: SEAT_YAW
+		};
 	}
 
 	const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -876,16 +941,21 @@ export function createRoom(
 		let face: number;
 		let water = 0;
 		if (tr.phase === 'water') {
-			tr.d += dt;
+			tr.watered += dt;
 			tripPos.copy(tr.path[tr.path.length - 1]);
 			const spot = treeSpot(today);
 			face = Math.atan2(spot.x - tripPos.x, spot.z - tripPos.z);
-			water = tr.d > 0.4 && tr.d < WATER_SECS - 0.5 ? 1 : 0;
-			if (!tr.grown && tr.d > 1.1) {
-				growToday(tr.commits, t);
-				tr.grown = true;
+			// 部署全部完成才讓樹長大；至少要先澆一下下
+			const all = [...tr.pushes.values()];
+			if (tr.grownAt === null && tr.watered > 1.5 && all.every((p) => p.done)) {
+				growToday(
+					all.reduce((n, p) => n + p.commits, 0),
+					t
+				);
+				tr.grownAt = t;
 			}
-			if (tr.d >= WATER_SECS) {
+			water = tr.watered > 0.4 && (tr.grownAt === null || t - tr.grownAt < 1.6) ? 1 : 0;
+			if (tr.grownAt !== null && t - tr.grownAt > 2.4) {
 				tr.phase = 'back';
 				tr.d = tr.total;
 			}
@@ -894,11 +964,16 @@ export function createRoom(
 			tr.d += dir * WALK_SPEED * dt;
 			if (tr.phase === 'go' && tr.d >= tr.total) {
 				tr.phase = 'water';
-				tr.d = 0;
+				tr.d = tr.total;
 			} else if (tr.phase === 'back' && tr.d <= 0) {
 				dv.trip = null;
 				dv.carrier.position.copy(SEAT);
 				dv.carrier.rotation.y = SEAT_YAW;
+				// 走回來的路上又有 push：坐下馬上再出發
+				if (dv.next) {
+					startTrip(dv, dv.next, t);
+					dv.next = null;
+				}
 				return null;
 			}
 			// 找出現在走在哪一段上
@@ -909,49 +984,54 @@ export function createRoom(
 			const b = tr.path[i + 1];
 			const k = tr.lens[i] ? clamp(d / tr.lens[i], 0, 1) : 1;
 			tripPos.lerpVectors(a, b, k);
-			// 上下台階的那一段跳一下
-			if (Math.abs(a.y - b.y) > 0.01) tripPos.y += Math.sin(Math.PI * k) * 0.14;
 			face = Math.atan2((b.x - a.x) * dir, (b.z - a.z) * dir);
 		}
+		tripPos.y = footY(tripPos.z);
 		tr.yaw += wrapAngle(face - tr.yaw) * (1 - Math.exp(-10 * dt));
 		dv.carrier.position.set(tripPos.x - dv.x, tripPos.y - PLINTH, tripPos.z - dv.z);
 		dv.carrier.rotation.y = tr.yaw;
 		return { walk: tr.phase === 'water' ? 0 : 1, water };
 	}
 
-	// 澆水的水滴：最多兩位管理員同時澆，一人 24 滴
+	// 澆水的水滴：從壺嘴往前、往下灑到樹根附近，不會往上噴。最多三位管理員同時澆，一人 24 滴
 	const DROPS = 24;
+	const POURERS = 3;
 	const dropMesh = new THREE.InstancedMesh(
-		keep(new THREE.SphereGeometry(0.022, 6, 4)),
+		keep(new THREE.SphereGeometry(0.018, 6, 4)),
 		keep(new THREE.MeshBasicMaterial({ color: '#8fd3ff', transparent: true, opacity: 0.85 })),
-		DROPS * 2
+		DROPS * POURERS
 	);
 	dropMesh.frustumCulled = false;
 	dropMesh.visible = false;
 	scene.add(dropMesh);
 	const spoutPos = new THREE.Vector3();
 	const dropPos = new THREE.Vector3();
+	const soil = new THREE.Vector3();
 	const dropM = new THREE.Matrix4();
 	const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
-	function setDrops(t: number) {
+	/** pouring：這一幀正在倒水的管理員 */
+	function setDrops(t: number, pouring: DeskView[]) {
 		let slot = 0;
-		for (const dv of desks) {
-			const tr = dv.trip;
-			if (slot >= 2 || tr?.phase !== 'water' || tr.d < 0.5 || tr.d > WATER_SECS - 0.5) continue;
+		for (const dv of pouring) {
+			if (slot >= POURERS) break;
 			dv.rig.spout.getWorldPosition(spoutPos);
-			const top = todayTop(t);
+			// 落點：樹幹底部，往管理員這邊偏一點，看得出是澆在土上
+			soil.copy(treeSpot(today)).setY(0.13);
+			soil.x += (spoutPos.x - soil.x) * 0.15;
+			soil.z += (spoutPos.z - soil.z) * 0.15;
 			for (let j = 0; j < DROPS; j++) {
-				const p = (t * 1.6 + j / DROPS) % 1;
+				const p = (t * 1.3 + j / DROPS) % 1;
 				const spread = ((j * 7) % 5) / 5 - 0.4;
-				dropPos.lerpVectors(spoutPos, top, p);
-				dropPos.y += Math.sin(Math.PI * p) * 0.12;
-				dropPos.x += spread * 0.06 * p;
-				dropPos.z += spread * 0.05 * p;
+				// 一開始從壺嘴往前衝一點點，接著往下掉（拋物線只往上拱 4 公分）
+				dropPos.lerpVectors(spoutPos, soil, p);
+				dropPos.y += Math.sin(Math.PI * p) * 0.04 - p * p * 0.02;
+				dropPos.x += spread * 0.05 * p;
+				dropPos.z += spread * 0.04 * p;
 				dropMesh.setMatrixAt(slot * DROPS + j, dropM.makeTranslation(dropPos.x, dropPos.y, dropPos.z));
 			}
 			slot++;
 		}
-		for (let j = slot * DROPS; j < DROPS * 2; j++) dropMesh.setMatrixAt(j, ZERO);
+		for (let j = slot * DROPS; j < DROPS * POURERS; j++) dropMesh.setMatrixAt(j, ZERO);
 		dropMesh.visible = slot > 0;
 		if (slot) dropMesh.instanceMatrix.needsUpdate = true;
 	}
@@ -1451,13 +1531,15 @@ export function createRoom(
 	const GRID = 0.1;
 	const gN = Math.ceil(S / GRID);
 	let occ: Uint8Array | null = null;
-	function occupancy() {
+	/** 真的有東西的格子（只留 5 公分），管理員找路時絕對不能穿過；太靠近東西（occ）只是比較貴 */
+	let solid: Uint8Array | null = null;
+	function occupancy(r = R) {
 		const g = new Uint8Array(gN * gN);
 		// 只標真的蓋到的格子（結尾用 ceil - 1），不然每個東西兩邊都會多胖一格，走道就被吃掉了
 		const lo = (v: number) => clamp(Math.floor((v + S / 2) / GRID), 0, gN - 1);
 		const hi = (v: number) => clamp(Math.ceil((v + S / 2) / GRID) - 1, 0, gN - 1);
 		for (const [x0, z0, x1, z1] of blocks)
-			for (let j = lo(z0 - R); j <= hi(z1 + R); j++) for (let i = lo(x0 - R); i <= hi(x1 + R); i++) g[j * gN + i] = 1;
+			for (let j = lo(z0 - r); j <= hi(z1 + r); j++) for (let i = lo(x0 - r); i <= hi(x1 + r); i++) g[j * gN + i] = 1;
 		return g;
 	}
 	const walkable = (x: number, z: number) => {
@@ -1786,8 +1868,8 @@ export function createRoom(
 	let last = performance.now();
 	const start = last;
 	let introDone = reduced;
-	/** 演過的 push 裡最大的 id；-1 是還沒收過即時狀態 */
-	let seenPush = -1;
+	/** 已經處理過的澆水（Watering 的 id） */
+	const seenWater = new Set<number>();
 	/** push 對到哪位管理員：網站上有那個專案就是它，沒有就依 repo 名稱固定挑一位 */
 	function deskForPush(key: string | null, repo: string) {
 		const hit = key ? desks.find((d) => d.desk.key === key) : undefined;
@@ -1889,8 +1971,10 @@ export function createRoom(
 		codeTex.offset.y = (-t * 0.08) % 1;
 
 		// 管理員
+		const pouring: DeskView[] = [];
 		for (const dv of desks) {
 			const act = dv.trip && introDone ? stepTrip(dv, t, dt) : null;
+			if (act?.water) pouring.push(dv);
 			dv.rig.update(t, dt, {
 				asleep: dv.desk.asleep,
 				jump: t - dv.jumpAt,
@@ -1925,7 +2009,7 @@ export function createRoom(
 			}
 		}
 
-		setDrops(t);
+		setDrops(t, pouring);
 
 		// 自動門：管理員或走進去的自己靠近門口就打開，走遠了慢慢關上
 		{
@@ -2170,23 +2254,38 @@ export function createRoom(
 			if (on) setWalk(false);
 			toggleQr(on);
 		},
-		/** 即時狀態：Claude 在做哪些專案、有沒有新的 push */
+		/** 即時狀態：Claude 在做哪些專案、正在澆水（push 到部署完成）的有哪些 */
 		setLive(live: LiveData) {
 			for (const dv of desks) dv.busy = live.desks[dv.desk.key] ?? null;
 			const t = (performance.now() - start) / 1000;
-			const first = seenPush < 0;
-			const went = new Set<DeskView>();
-			for (const p of live.pushes) {
-				if (p.id <= seenPush) continue;
-				seenPush = p.id;
-				// 剛打開網頁時只補演五分鐘內的 push，一位管理員走一趟就好
-				if (first && live.at - p.at > 5 * 60 * 1000) continue;
-				const dv = deskForPush(p.key, p.repo);
-				if (!dv || (first && went.has(dv))) continue;
-				went.add(dv);
-				startTrip(dv, p.commits, t);
+			for (const w of live.waterings) {
+				const dv = deskForPush(w.key, w.repo);
+				if (!dv) continue;
+				const done = w.phase === 'done';
+				// 已經在澆的這幾次 push：更新 commit 數、部署完了沒
+				const mine = dv.trip?.pushes.get(w.id);
+				if (mine) {
+					Object.assign(mine, { commits: w.commits, done });
+					continue;
+				}
+				if (reduced) {
+					// 減少動態：不走過去，部署完成時樹直接長大
+					if (!seenWater.has(w.id) && !done) quietWater.set(w.id, w.commits);
+					if (done && quietWater.has(w.id)) {
+						growToday(w.commits, t);
+						quietWater.delete(w.id);
+					}
+					seenWater.add(w.id);
+					continue;
+				}
+				if (seenWater.has(w.id)) continue;
+				seenWater.add(w.id);
+				// 打開網頁之前就澆完的不演
+				if (done) continue;
+				if (!dv.trip) startTrip(dv, w, t);
+				else if (dv.trip.phase !== 'back' && dv.trip.grownAt === null) dv.trip.pushes.set(w.id, { commits: w.commits, done });
+				else dv.next = w;
 			}
-			if (first) seenPush = Math.max(seenPush, 0);
 		},
 		setTier(next: Tier) {
 			tier = next;

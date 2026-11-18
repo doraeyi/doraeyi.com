@@ -7,6 +7,7 @@
 // 一個 session 在 YIWallet 資料夾開、卻在改 doraeyi.com 的檔案，網站上動起來的就是 doraeyi.com 那位。
 //
 // 只送四樣東西：session id、事件名稱、git remote 網址、資料夾名稱。不送對話內容、不送檔名。
+// Claude 要 git push 時多帶一個 push: true，網站上那個專案的管理員就先出發去花園澆水，一直澆到 GitHub Actions 部署完。
 // 公司的專案：放在 ~/.claude/doraeyi-presence.json 的 workDirs 底下的，一律只送 dir: 'work'，
 // 不送 git remote、不送資料夾名稱，網站上對到的是工作室裡那張不公開的「公司」桌子。
 // 公司電腦設 { "all": true }：這台電腦上的每個 session 都當作公司的，一律只送 work。
@@ -141,7 +142,10 @@ async function main() {
 	const tool = event === 'PreToolUse' || event === 'PostToolUse';
 	const state = tool || event === 'UserPromptSubmit' ? 'working' : 'other';
 	const now = Date.now();
-	const skip = tool && !changed && saved.state === 'working' && now - (saved.at ?? 0) < 60_000;
+	// Claude 正要 git push：一定要馬上回報，管理員先出發去花園澆水，一直澆到 GitHub Actions 部署完（公司的不算）
+	const cmd = event === 'PreToolUse' ? hook.tool_input?.command : null;
+	const push = typeof cmd === 'string' && /(?:^|[\s;&|(])git(?:\s+-C\s+\S+)?\s+push(?:\s|$)/.test(cmd) && !repo?.work;
+	const skip = !push && tool && !changed && saved.state === 'working' && now - (saved.at ?? 0) < 60_000;
 	try {
 		writeFileSync(file, JSON.stringify({ state, at: skip ? saved.at : now, top: repo?.top ?? null, remote: repo?.remote ?? null, work: Boolean(repo?.work) }));
 	} catch {
@@ -153,7 +157,7 @@ async function main() {
 		method: 'POST',
 		headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
 		// 公司的專案只送 work，什麼名稱都不帶出去
-		body: JSON.stringify(repo?.work ? { session, event, repo: null, dir: 'work' } : { session, event, repo: repo?.remote ?? null, dir: basename(repo?.top || cwd) }),
+		body: JSON.stringify(repo?.work ? { session, event, repo: null, dir: 'work' } : { session, event, repo: repo?.remote ?? null, dir: basename(repo?.top || cwd), push }),
 		signal: AbortSignal.timeout(3000)
 	});
 }

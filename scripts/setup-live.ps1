@@ -74,14 +74,16 @@ Write-Host "（收到 $($secret.Length) 個字，指紋 $(Get-Fingerprint $secre
 # 自己的 repo（不含 fork、封存）都加 webhook；已經有的跳過
 $repos = & $gh repo list doraeyi --limit 200 --no-archived --source --json nameWithOwner -q '.[].nameWithOwner'
 $config = @{ url = $hookUrl; content_type = 'json'; secret = $secret; insecure_ssl = '0' }
+# push：GitHub 收到 commit；workflow_run：GitHub Actions 開跑、跑完（管理員澆水澆到部署完成）
+$events = @('push', 'workflow_run')
 $pinged = $null
 foreach ($r in $repos) {
 	$id = (& $gh api "repos/$r/hooks" | ConvertFrom-Json | Where-Object { $_.config.url -eq $hookUrl } | Select-Object -First 1).id
 	if ($id) {
-		# 已經有了：只換 Secret
-		Invoke-GhJson PATCH "repos/$r/hooks/$id/config" $config
+		# 已經有了：換 Secret、確定有訂 push 跟 workflow_run（舊版只訂 push）
+		Invoke-GhJson PATCH "repos/$r/hooks/$id" @{ active = $true; events = $events; config = $config }
 	} else {
-		$id = Invoke-GhJson POST "repos/$r/hooks" @{ name = 'web'; active = $true; events = @('push'); config = $config } '.id'
+		$id = Invoke-GhJson POST "repos/$r/hooks" @{ name = 'web'; active = $true; events = $events; config = $config } '.id'
 	}
 	if ($LASTEXITCODE -ne 0 -or -not $id) { Write-Host "✗ $r 設不上去"; continue }
 	Write-Host "✓ $r"

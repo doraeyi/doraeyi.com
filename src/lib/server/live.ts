@@ -1,5 +1,5 @@
 import type { DeskState, LiveData } from '#lib/types.js';
-import type { PresenceRow } from './db.js';
+import type { PresenceRow, WateringRow } from './db.js';
 
 // Claude 的工作狀態跟 GitHub 的 push 要對到網站上的哪一張桌子：
 //   先比 repo（owner/name），對不到再拿名稱（資料夾或 repo 名）比專案代號、repo 名、網站網域
@@ -8,8 +8,6 @@ import type { PresenceRow } from './db.js';
 export const WORKING_TTL = 15 * 60 * 1000;
 /** 做完一輪在等你回覆，這麼久沒動靜就當作下班了 */
 export const WAITING_TTL = 30 * 60 * 1000;
-/** 這麼久以前的 push 就不澆了 */
-export const PUSH_TTL = 15 * 60 * 1000;
 
 /** https://github.com/Owner/Name(.git)、git@github.com:Owner/Name.git → owner/name */
 export function repoSlug(url: string | null | undefined): string | null {
@@ -50,7 +48,7 @@ export function matchDesks(desks: DeskRef[], repo: string | null, dir?: string |
 export function buildLive(
 	desks: DeskRef[],
 	presence: PresenceRow[],
-	pushes: { id: number; repo: string; commits: number; at: number }[],
+	waterings: WateringRow[],
 	now = Date.now()
 ): LiveData {
 	const states: Record<string, DeskState> = {};
@@ -64,7 +62,15 @@ export function buildLive(
 	}
 	return {
 		desks: states,
-		pushes: pushes.filter((p) => now - p.at < PUSH_TTL).map((p) => ({ ...p, key: matchDesks(desks, p.repo)[0] ?? null })),
+		waterings: waterings.map((w) => ({
+			id: w.id,
+			key: matchDesks(desks, w.repo)[0] ?? null,
+			repo: w.repo,
+			commits: w.commits,
+			phase: w.done_at ? 'done' : w.pushed_at || w.saw_run ? 'deploying' : 'pushing',
+			ok: Boolean(w.ok),
+			startedAt: w.started_at
+		})),
 		at: now
 	};
 }

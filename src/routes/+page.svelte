@@ -16,7 +16,7 @@
 	import { buildWorld, domainOf, keeperName } from '#lib/room/world.js';
 	import type { Focus } from '#lib/room/protocol.js';
 	import type { SceneMode } from '#lib/room/stats.svelte.js';
-	import type { Host, LiveData } from '#lib/types.js';
+	import type { Host, LiveData, Watering } from '#lib/types.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -47,43 +47,68 @@
 	let near = $state<string | null>(null);
 	const nearProject = $derived(walk && near ? (data.projects.find((p) => p.key === near) ?? null) : null);
 
-	/** 管理員現在在做什麼：Claude 正在改哪些專案、最近的 push。頁面本身有快取，這個另外每 15 秒問一次 */
+	/**
+	 * 管理員現在在做什麼：Claude 正在改哪些專案、哪些 push 正在澆水。頁面本身有快取，這個另外問：
+	 * 平常 15 秒一次；有人在澆水時 4 秒一次，部署一完成樹就長大，不用等太久
+	 */
 	let live = $state<LiveData | null>(null);
 	const working = $derived(Object.values(live?.desks ?? {}).filter((s) => s === 'working').length);
-	/** 有新的 push：管理員跑去花園澆水，上面跳一行字說明 */
+	/** 澆水的進度有變化（出發、推上去了、部署完）就在上面跳一行字說明 */
 	let toast = $state<string | null>(null);
-	let toastSeen = -1;
+	/** 每次澆水上次看到的進度；還沒收過即時狀態是 null */
+	let phases: Record<number, Watering['phase']> | null = null;
+	function waterNote(w: Watering, before: Watering['phase'] | undefined) {
+		if (before === w.phase) return null;
+		const name = w.repo.split('/')[1];
+		const project = data.projects.find((p) => p.key === w.key);
+		const who = project ? keeperName(project.key, project.keeper) : '管理員';
+		if (w.phase === 'pushing') return `${name} 正在 push，${who}拿起澆水壺去花園了`;
+		if (w.phase === 'deploying')
+			return before ? `${name} 推上去了（${w.commits} 個 commit），${who}邊澆水邊等部署` : `${name} 推了 ${w.commits} 個 commit，${who}去花園邊澆水邊等部署`;
+		if (!before) return null;
+		if (!w.commits) return `${name} 沒有推上去，${who}回位子了`;
+		return w.ok ? `${name} 部署完成，今天的樹長大了` : `${name} 的 GitHub Actions 沒有過，樹還是長了 ${w.commits} 個 commit 的份`;
+	}
 	$effect(() => {
 		let alive = true;
 		let toastTimer: ReturnType<typeof setTimeout> | undefined;
+		let pollTimer: ReturnType<typeof setTimeout> | undefined;
 		const poll = async () => {
-			if (document.hidden) return;
+			clearTimeout(pollTimer);
+			let busy = false;
 			try {
+				if (document.hidden) return;
 				const res = await fetch('/api/live');
 				if (!res.ok || !alive) return;
 				const next = (await res.json()) as LiveData;
-				// 跟場景同一套規則：剛打開時只提五分鐘內的 push
-				const fresh = next.pushes.filter((p) => p.id > toastSeen && (toastSeen >= 0 || next.at - p.at < 5 * 60 * 1000)).at(-1);
-				toastSeen = Math.max(toastSeen, 0, ...next.pushes.map((p) => p.id));
-				if (fresh) {
-					const project = data.projects.find((p) => p.key === fresh.key);
-					const who = project ? keeperName(project.key, project.keeper) : '管理員';
-					toast = `${fresh.repo.split('/')[1]} 剛推了 ${fresh.commits} 個 commit，${who}去花園幫今天的樹澆水`;
+				const first = phases === null;
+				const seen: Record<number, Watering['phase']> = phases ?? {};
+				let note: string | null = null;
+				for (const w of next.waterings) {
+					// 剛打開網頁時，已經澆完的不提
+					if (!(first && w.phase === 'done')) note = waterNote(w, seen[w.id]) ?? note;
+					seen[w.id] = w.phase;
+				}
+				phases = seen;
+				busy = next.waterings.some((w) => w.phase !== 'done');
+				if (note) {
+					toast = note;
 					clearTimeout(toastTimer);
 					toastTimer = setTimeout(() => (toast = null), 9000);
 				}
 				live = next;
 			} catch {
 				/* 下一輪再問 */
+			} finally {
+				if (alive) pollTimer = setTimeout(poll, busy ? 4000 : 15_000);
 			}
 		};
 		void poll();
-		const timer = setInterval(poll, 15_000);
 		const onVisible = () => void (!document.hidden && poll());
 		document.addEventListener('visibilitychange', onVisible);
 		return () => {
 			alive = false;
-			clearInterval(timer);
+			clearTimeout(pollTimer);
 			clearTimeout(toastTimer);
 			document.removeEventListener('visibilitychange', onVisible);
 		};

@@ -1,10 +1,10 @@
 import QRCode from 'qrcode';
 import type { GithubData, Health, Keeper, LiveData, Project, SiteData } from '#lib/types.js';
-import { getHealth, getPresence, getProfile, getProjectMeta, getPushes, getShots, getVmProjects, type ProjectMeta } from './db.js';
+import { getHealth, getPresence, getProfile, getProjectMeta, getShots, getVmProjects, getWaterings, type ProjectMeta } from './db.js';
 import { fallbackProfile, fallbackProjects } from './fallback.js';
 import { fetchGithub, GITHUB_LOGIN } from './github.js';
 import { checkIfDue, nextCheckAt, type Target } from './health.js';
-import { buildLive, PUSH_TTL, WAITING_TTL } from './live.js';
+import { buildLive, WAITING_TTL } from './live.js';
 import { captureAll, SHOT_EVERY } from './shots.js';
 import { fetchVercelProjects, hasVercel, type BaseProject } from './vercel.js';
 
@@ -177,7 +177,7 @@ export async function getLive(): Promise<LiveData> {
 	return buildLive(
 		base.projects,
 		await safe('讀取 presence', async () => getPresence(now - WAITING_TTL), []),
-		await safe('讀取 push', async () => getPushes(now - PUSH_TTL), []),
+		await safe('讀取 watering', async () => getWaterings(now), []),
 		now
 	);
 }

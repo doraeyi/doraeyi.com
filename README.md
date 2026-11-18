@@ -26,7 +26,7 @@ doraeyi.com 是我的個人網站，整個首頁是一個可以拖曳旋轉的 3
 - 😴 **巡房管理員**：每 12 小時健康檢查一次，結果與妥善率存在 SQLite，掛掉的專案管理員會睡著；上方「N 位睡著了」可以點，鏡頭直接飛到睡著的那張桌子
 - 🚶 **走進去**：切換列的「走進去」換成第一人稱，從玄關門口出發，桌面用 WASD／方向鍵走（Shift 跑）、拖曳轉頭，手機用左下角的搖桿；牆、桌子、機櫃、草叢、落地玻璃都穿不過去，玄關兩邊各有一道門通往兩間房間，要去花園得從玄關的玻璃自動門出去（走近就自動打開）。走到電腦前會出現「E 看 xxx」，按 E（手機點一下）打開那個專案的資訊卡；Esc 離開
 - 🌳 **GitHub 提交果園**：過去一年每天的提交數，一天一棵樹，提交越多長越高、樹冠越大越綠；沒提交的那天只有一小撮草（不需要 token）
-- 🧑‍💻 **管理員跟著我一起工作**：電腦上的 Claude Code 在改哪個專案，那張桌子的管理員就盯著螢幕狂打字、螢幕捲程式碼、頭上冒「…」；Claude 做完一輪在等回覆，管理員轉過來歪頭、頭上打勾。push 上 GitHub 後，管理員拿起澆水壺，從房間側門走進玄關、穿過名牌底下那道便利商店式的玻璃自動門（有人靠近感應燈變綠、兩扇門往旁邊滑開），在花園裡繞過草叢，走到今天那棵樹旁邊澆水，樹當場長大，再走回位子。設定方式見〈管理員的工作狀態〉
+- 🧑‍💻 **管理員跟著我一起工作**：電腦上的 Claude Code 在改哪個專案，那張桌子的管理員就盯著螢幕狂打字、螢幕捲程式碼、頭上冒「…」；Claude 做完一輪在等回覆，管理員轉過來歪頭、頭上打勾。Claude 一下 `git push`，管理員就拿起澆水壺出發：在碰撞地圖上找路（A*），從房間側門走進玄關、穿過名牌底下那道便利商店式的玻璃自動門（有人靠近感應燈變綠、兩扇門往旁邊滑開），繞過桌子、其他管理員、草叢跟花圃，走到今天那棵樹旁邊，從壺嘴往樹根澆水。GitHub 收到之後繼續澆，GitHub Actions 全部跑完（部署完成）樹才長大，再走回位子；好幾位同時澆就在樹旁邊排開。設定方式見〈管理員的工作狀態〉
 - 🔳 **房子上空拼出一個 QR code（視角錯覺）**：滾輪滾到最遠、按著往下拉或按「QR」，地板跟花園裡屬於 QR 深色格子的那幾格先從三個定位角往外凸起來，接著一塊塊從地上拔起來（地上留下洞），帶著原本的木地板、石磚、機房地板、草叢的顏色跟紋路，邊轉邊飛到房子上空不同的高度。鏡頭先繞到側邊讓人看清楚一堆漂浮的地板碎片，再滑到一個固定的位置（P），碎片在最後一刻「喀」一聲拼成 GitHub 個人頁的 QR code，同時燒成同材質的深色、房子淡成一張淺色的紙。做法：每一塊都擺在從 P 看向底板那一格的視線上，越靠近 P 縮得越小、側面也順著視線收斜，所以只有從 P 看才對得齊；P 依畫面大小算出來，換尺寸就重排；紋路用碎片還在地上時的座標算，飛起來也黏在上面。QR 模式可以左右拖、往下拖離開 P，碎片散開、變回地板的顏色，放手彈回去對準；往上推倒帶回房間（QR 矩陣在伺服器用 `qrcode` 算好）。手機掃不到自己的螢幕，所以 QR 卡片有「存圖」（`/qr.png`）跟「分享」（系統分享面板）
 - 🖥️ **螢幕顯示專案首頁**：巡房後幫正常的專案拍首頁截圖（WordPress mshots，免費、不用帳號），一天更新一次，存在資料庫旁的 `shots/` 資料夾，貼到桌上的螢幕跟資訊卡；掛掉的專案螢幕會變成紅色 DOWN
 - 🗂️ **點桌子看詳情**：網域、上次巡房、回應時間、HTTP 狀態、妥善率、技術、原始碼連結
@@ -103,8 +103,8 @@ doraeyi/
 兩個來源，都只送「哪個 repo、現在什麼狀態」，不送對話內容或程式碼：
 
 - **Claude 在做事**：Claude Code 的 hook（`scripts/claude-presence.mjs`）在開工、呼叫工具（一分鐘最多一次）、做完一輪、關掉 session 時打 `POST /api/presence`，帶著 `PRESENCE_TOKEN`。呼叫工具時回報「做事中」，15 分鐘沒消息當作停了；做完一輪是「等回覆」，30 分鐘後消失
-- **push**：GitHub webhook 打 `POST /api/github`，用 `GITHUB_WEBHOOK_SECRET` 驗簽章（`X-Hub-Signature-256`）
-- 前端每 15 秒問一次 `GET /api/live`；剛打開網頁時，五分鐘內的 push 會補演一次
+- **push 到部署完成**：hook 看到 Claude 要 `git push` 時多帶 `push: true`，管理員先出發（pushing）；GitHub webhook 的 `push` 事件表示 GitHub 收到了（deploying）；`workflow_run` 事件追蹤這次 push 觸發的 GitHub Actions，全部跑完才算澆完（done）。手動 push 從 GitHub 收到那刻開始；沒有 CI 的 repo 收到後 25 秒收工；開始 push 3 分鐘 GitHub 都沒收到就當作沒推成功。webhook 用 `GITHUB_WEBHOOK_SECRET` 驗簽章（`X-Hub-Signature-256`），要勾 push 跟 workflow_run 兩種事件
+- 前端平常每 15 秒問一次 `GET /api/live`，有人在澆水時 4 秒一次；剛打開網頁時，還在澆的會接著演，已經澆完的不演
 - 公司的專案：工作室固定一張「公司」桌子，名稱、網址、程式都不公開，不巡房、不澆水。公司電腦上的 PowerShell 跑一行就裝好（`-AllWork`：這台電腦的每個 session 都只送 `work`，不送 git remote、資料夾名稱）：
   `iwr https://raw.githubusercontent.com/doraeyi/doraeyi.com/main/scripts/install-hook.ps1 -OutFile $env:TEMP\doraeyi-hook.ps1; powershell -ExecutionPolicy Bypass -File $env:TEMP\doraeyi-hook.ps1 -AllWork`
   只想讓某些資料夾算公司的，改用 `-WorkDir D:\Workspace`（寫進 `~/.claude/doraeyi-presence.json` 的 `workDirs`）
@@ -168,7 +168,7 @@ pnpm test:qr
 | `health` | 每個專案最近一次巡房結果，加上累計檢查、失敗次數（算妥善率） |
 | `screenshot` | 每個專案最近一次拍首頁截圖的時間；圖檔在資料庫旁邊的 `shots/` |
 | `presence` | 每個 Claude Code session 現在在做哪個 repo、做事中還是等回覆；一天沒消息就刪掉 |
-| `push` | GitHub webhook 收到的 push（只留最近一天），管理員看到新的就去澆水 |
+| `watering` | 一次 push 從開始到部署完成：開始時間、GitHub 收到的 commit、還在跑的 GitHub Actions、完成時間（只留最近一天） |
 
 資料表定義在 `db/schema.sql`，伺服器第一次連線時會自動建立，`profile` 跟 `vm_project` 也會放入 `src/lib/server/fallback.ts` 的預設值（VM 上一開始有 blog 跟 doraeyi.com）。
 

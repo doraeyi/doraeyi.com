@@ -1,10 +1,11 @@
 import { createHmac } from 'node:crypto';
 import { error, json } from '@sveltejs/kit';
-import { savePush } from '#lib/server/db.js';
+import { recordPush, recordRun } from '#lib/server/db.js';
 import { sameSecret, webhookSecret } from '#lib/server/secret.js';
 import type { RequestHandler } from './$types';
 
-// GitHub webhook：repo 有 push 就通知這裡，管理員會跑去花園幫今天那棵樹澆水
+// GitHub webhook：push 跟 GitHub Actions 的進度。管理員從 push 開始澆水，Actions 全部跑完才停
+// （webhook 要勾 push 跟 workflow_run 兩種事件）
 // GitHub 用 Secret 對整個 body 簽章（X-Hub-Signature-256），對不上的一律不收
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -18,14 +19,32 @@ export const POST: RequestHandler = async ({ request }) => {
 	const event = request.headers.get('x-github-event');
 	// 剛加 webhook 時 GitHub 會先送一個 ping 試試看
 	if (event === 'ping') return json({ ok: true, pong: true });
-	if (event !== 'push') return json({ ok: true, ignored: event });
 
-	const body = JSON.parse(raw) as { deleted?: boolean; commits?: unknown[]; repository?: { full_name?: string } };
+	const body = JSON.parse(raw) as {
+		action?: string;
+		after?: string;
+		deleted?: boolean;
+		commits?: unknown[];
+		repository?: { full_name?: string };
+		workflow_run?: { id: number; head_sha: string; event: string; conclusion: string | null };
+	};
 	const repo = body.repository?.full_name?.toLowerCase();
-	const commits = body.commits?.length ?? 0;
-	// 刪分支、只推 tag 不算
-	if (!repo || body.deleted || !commits) return json({ ok: true, ignored: 'no commits' });
+	if (!repo) return json({ ok: true, ignored: 'no repo' });
 
-	savePush(repo, commits);
-	return json({ ok: true });
+	if (event === 'push') {
+		const commits = body.commits?.length ?? 0;
+		// 刪分支、只推 tag 不算
+		if (body.deleted || !commits || !body.after) return json({ ok: true, ignored: 'no commits' });
+		recordPush(repo, body.after, commits);
+		return json({ ok: true });
+	}
+
+	const run = body.workflow_run;
+	// 只看 push 觸發的；排程、手動觸發的 Actions 不關澆水的事
+	if (event === 'workflow_run' && run && run.event === 'push') {
+		if (body.action === 'completed') recordRun(repo, run.head_sha, run.id, 'end', ['success', 'skipped', 'neutral'].includes(run.conclusion ?? ''));
+		else recordRun(repo, run.head_sha, run.id, 'start', true);
+		return json({ ok: true });
+	}
+	return json({ ok: true, ignored: event });
 };

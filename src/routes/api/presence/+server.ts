@@ -1,6 +1,6 @@
 import { error, json } from '@sveltejs/kit';
 import { PRESENCE_TOKEN } from '$app/env/private';
-import { savePresence, type PresenceState } from '#lib/server/db.js';
+import { savePresence, startWatering, type PresenceState } from '#lib/server/db.js';
 import { repoSlug } from '#lib/server/live.js';
 import { sameSecret } from '#lib/server/secret.js';
 import type { RequestHandler } from './$types';
@@ -22,12 +22,15 @@ export const POST: RequestHandler = async ({ request }) => {
 	const auth = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
 	if (!PRESENCE_TOKEN || !sameSecret(auth, PRESENCE_TOKEN)) error(401, '密碼不對');
 
-	const body = (await request.json().catch(() => null)) as { session?: unknown; event?: unknown; repo?: unknown; dir?: unknown } | null;
+	const body = (await request.json().catch(() => null)) as { session?: unknown; event?: unknown; repo?: unknown; dir?: unknown; push?: unknown } | null;
 	const session = typeof body?.session === 'string' ? body.session.slice(0, 100) : '';
 	const event = typeof body?.event === 'string' ? body.event : '';
 	const dir = typeof body?.dir === 'string' ? body.dir.slice(0, 100).toLowerCase() : '';
 	if (!session || !dir || !(event in STATE)) error(400, '少了 session、dir 或 event 不認得');
 
-	savePresence(session, { repo: repoSlug(typeof body?.repo === 'string' ? body.repo : null), dir, state: STATE[event] });
+	const repo = repoSlug(typeof body?.repo === 'string' ? body.repo : null);
+	savePresence(session, { repo, dir, state: STATE[event] });
+	// Claude 正要 git push：管理員先出發去花園，等 GitHub 收到、部署完成
+	if (body?.push === true && repo) startWatering(repo);
 	return json({ ok: true });
 };

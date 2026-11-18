@@ -86,11 +86,26 @@ export interface SiteData {
 
 export type DeskState = 'working' | 'waiting';
 
+/**
+ * 一次 push 從開始到部署完成，管理員這段時間都在花園澆水：
+ *   pushing：Claude 開始 git push，GitHub 還沒收到；deploying：GitHub 收到了，等 GitHub Actions 跑完；done：澆完了
+ */
+export interface Watering {
+	id: number;
+	key: string | null;
+	repo: string;
+	commits: number;
+	phase: 'pushing' | 'deploying' | 'done';
+	/** false：push 沒送上去，或部署失敗 */
+	ok: boolean;
+	startedAt: number;
+}
+
 /** 即時狀態：前端每隔一陣子來問一次（/api/live） */
 export interface LiveData {
 	/** 專案 key → 那位管理員現在的狀態；不在裡面的就是閒著 */
 	desks: Record<string, DeskState>;
-	/** 最近的 push，管理員會去花園澆水。id 只會變大，前端記得看過哪幾個；key 是 null 代表網站上沒有這個專案 */
-	pushes: { id: number; key: string | null; repo: string; commits: number; at: number }[];
+	/** 正在澆水（跟剛澆完）的 push。id 只會變大；key 是 null 代表網站上沒有這個專案 */
+	waterings: Watering[];
 	at: number;
 }

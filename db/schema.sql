@@ -77,11 +77,19 @@ CREATE TABLE IF NOT EXISTS presence (
   updated_at   INTEGER NOT NULL             -- 毫秒時間戳
 );
 
--- GitHub webhook 收到的 push：管理員會跑去花園幫當天那棵樹澆水
--- 只留最近一天，舊的在寫入時順便刪掉
-CREATE TABLE IF NOT EXISTS push (
-  id       INTEGER PRIMARY KEY AUTOINCREMENT,
-  repo     TEXT NOT NULL,                   -- owner/name（小寫）
-  commits  INTEGER NOT NULL,
-  at       INTEGER NOT NULL                 -- 毫秒時間戳
+-- 澆水：一次 push 從開始到部署完成。Claude 一下 git push 管理員就去花園澆水，
+-- GitHub 收到之後繼續澆，GitHub Actions 全部跑完才停、樹才長大（src/lib/server/db.ts 的 watering 那段）
+-- 舊版只記 push 的表，換成這張
+DROP TABLE IF EXISTS push;
+CREATE TABLE IF NOT EXISTS watering (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo        TEXT NOT NULL,                -- owner/name（小寫）
+  sha         TEXT,                         -- push 之後最新的 commit，用來對 GitHub Actions 的 head_sha
+  commits     INTEGER NOT NULL DEFAULT 0,
+  started_at  INTEGER NOT NULL,             -- Claude 開始 git push（手動 push 就是 GitHub 通知）的時間
+  pushed_at   INTEGER,                      -- GitHub 收到 push
+  runs        TEXT NOT NULL DEFAULT '[]',   -- 還在跑的 workflow run id（JSON）
+  saw_run     INTEGER NOT NULL DEFAULT 0,   -- 1 = 這次 push 有觸發 GitHub Actions
+  ok          INTEGER NOT NULL DEFAULT 1,   -- 0 = push 沒送上去，或部署失敗
+  done_at     INTEGER                       -- 部署完成（或確定沒有 CI、等太久）
 );

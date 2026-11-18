@@ -53,16 +53,22 @@ describe('即時狀態', () => {
 		expect(live.desks['vm:blog']).toBe('working');
 	});
 
-	it('只回傳最近的 push，並標上是哪一張桌子', () => {
+	it('澆水的進度：還沒收到 → 等部署 → 澆完，並標上是哪一張桌子', () => {
+		const base = { sha: null, commits: 0, runs: '[]', saw_run: 0, ok: 1, pushed_at: null, done_at: null, started_at: now };
 		const live = buildLive(
 			desks,
 			[],
 			[
-				{ id: 1, repo: 'doraeyi/yiwallet', commits: 2, at: now - 3600 * 1000 },
-				{ id: 2, repo: 'doraeyi/yiwallet', commits: 1, at: now - 1000 }
+				{ ...base, id: 1, repo: 'doraeyi/yiwallet' },
+				{ ...base, id: 2, repo: 'doraeyi/doraeyi.com', commits: 2, pushed_at: now },
+				{ ...base, id: 3, repo: 'someone/else', commits: 1, pushed_at: now, done_at: now, ok: 0 }
 			],
 			now
 		);
-		expect(live.pushes).toEqual([{ id: 2, repo: 'doraeyi/yiwallet', commits: 1, at: now - 1000, key: 'vercel:yiwallet' }]);
+		expect(live.waterings.map((w) => [w.key, w.phase, w.ok])).toEqual([
+			['vercel:yiwallet', 'pushing', true],
+			['vm:site', 'deploying', true],
+			[null, 'done', false]
+		]);
 	});
 });

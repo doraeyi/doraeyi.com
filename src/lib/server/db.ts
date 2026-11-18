@@ -233,16 +233,83 @@ export function getPresence(since: number): PresenceRow[] {
 	return db().prepare('SELECT repo, dir, state, updated_at FROM presence WHERE updated_at >= ?').all(since) as PresenceRow[];
 }
 
-export function savePush(repo: string, commits: number, now = Date.now()) {
-	db().prepare('INSERT INTO push (repo, commits, at) VALUES (?, ?, ?)').run(repo, commits, now);
-	db().prepare('DELETE FROM push WHERE at < ?').run(now - 24 * 3600 * 1000);
+// ---- 澆水：一次 push 從開始到部署完成 ----
+
+/** Claude 開始 push，這麼久 GitHub 還沒收到，就當作沒推成功 */
+export const PUSH_WAIT = 3 * 60 * 1000;
+/** GitHub 收到 push 後，這麼久都沒有 GitHub Actions 開跑，就當作這個 repo 沒有 CI */
+export const NO_CI_WAIT = 25 * 1000;
+/** CI 跑這麼久還沒好，不等了 */
+export const DEPLOY_MAX = 40 * 60 * 1000;
+/** 澆完之後還留在清單上這麼久，晚一點才問的網頁也看得到結果 */
+export const KEEP_DONE = 3 * 60 * 1000;
+
+export interface WateringRow {
+	id: number;
+	repo: string;
+	sha: string | null;
+	commits: number;
+	started_at: number;
+	pushed_at: number | null;
+	runs: string;
+	saw_run: number;
+	ok: number;
+	done_at: number | null;
 }
 
-export function getPushes(since: number): { id: number; repo: string; commits: number; at: number }[] {
-	return db().prepare('SELECT id, repo, commits, at FROM push WHERE at >= ? ORDER BY id').all(since) as {
-		id: number;
-		repo: string;
-		commits: number;
-		at: number;
-	}[];
+const latestBySha = (repo: string, sha: string) =>
+	db().prepare('SELECT * FROM watering WHERE repo = ? AND sha = ? ORDER BY id DESC LIMIT 1').get(repo, sha) as WateringRow | undefined;
+
+/** Claude 開始 git push：管理員出發。同一個 repo 已經有一個在等 GitHub 的就不重複開 */
+export function startWatering(repo: string, now = Date.now()) {
+	const open = db()
+		.prepare('SELECT id FROM watering WHERE repo = ? AND done_at IS NULL AND pushed_at IS NULL AND started_at > ?')
+		.get(repo, now - PUSH_WAIT);
+	if (!open) db().prepare('INSERT INTO watering (repo, started_at) VALUES (?, ?)').run(repo, now);
+}
+
+/** GitHub 收到 push：接上 Claude 開始的那一筆；手動 push 沒有那一筆，就從現在開始 */
+export function recordPush(repo: string, sha: string, commits: number, now = Date.now()) {
+	const row =
+		latestBySha(repo, sha) ??
+		(db()
+			.prepare('SELECT * FROM watering WHERE repo = ? AND sha IS NULL AND done_at IS NULL AND started_at > ? ORDER BY id DESC LIMIT 1')
+			.get(repo, now - PUSH_WAIT) as WateringRow | undefined);
+	if (row) {
+		db()
+			.prepare('UPDATE watering SET sha = ?, commits = commits + ?, pushed_at = COALESCE(pushed_at, ?) WHERE id = ?')
+			.run(sha, commits, now, row.id);
+	} else {
+		db().prepare('INSERT INTO watering (repo, sha, commits, started_at, pushed_at) VALUES (?, ?, ?, ?, ?)').run(repo, sha, commits, now, now);
+	}
+}
+
+/** GitHub Actions 開跑（start）或跑完（end）。這次 push 的 run 全部跑完，就澆完了 */
+export function recordRun(repo: string, sha: string, runId: number, status: 'start' | 'end', ok: boolean, now = Date.now()) {
+	let row = latestBySha(repo, sha);
+	if (!row) {
+		// 有時候 Actions 的通知比 push 的先到
+		db().prepare('INSERT INTO watering (repo, sha, started_at) VALUES (?, ?, ?)').run(repo, sha, now);
+		row = latestBySha(repo, sha)!;
+	}
+	if (row.done_at) return;
+	const runs = new Set<number>(json<number[]>(row.runs) ?? []);
+	if (status === 'start') runs.add(runId);
+	else runs.delete(runId);
+	const done = status === 'end' && runs.size === 0;
+	db()
+		.prepare('UPDATE watering SET runs = ?, saw_run = 1, ok = ok * ?, done_at = ? WHERE id = ?')
+		.run(JSON.stringify([...runs]), status === 'end' && !ok ? 0 : 1, done ? now : null, row.id);
+}
+
+/** 還在澆的，加上剛澆完的。順便把等太久的收掉：push 沒送上去、沒有 CI、CI 卡住 */
+export function getWaterings(now = Date.now()): WateringRow[] {
+	const conn = db();
+	conn
+		.prepare('UPDATE watering SET done_at = ?, ok = 0 WHERE done_at IS NULL AND pushed_at IS NULL AND saw_run = 0 AND started_at < ?')
+		.run(now, now - PUSH_WAIT);
+	conn.prepare('UPDATE watering SET done_at = ? WHERE done_at IS NULL AND pushed_at < ? AND saw_run = 0').run(now, now - NO_CI_WAIT);
+	conn.prepare('UPDATE watering SET done_at = ? WHERE done_at IS NULL AND started_at < ?').run(now, now - DEPLOY_MAX);
+	conn.prepare('DELETE FROM watering WHERE started_at < ?').run(now - 24 * 3600 * 1000);
+	return conn.prepare('SELECT * FROM watering WHERE done_at IS NULL OR done_at > ? ORDER BY id').all(now - KEEP_DONE) as WateringRow[];
 }

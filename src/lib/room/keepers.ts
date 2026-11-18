@@ -284,7 +284,7 @@ export function buildKeeper(kind: Keeper, variant: number, mat: THREE.Material, 
 			body.position.y = (1 - sit) * Math.abs(Math.sin(t * 2 + phase)) * 0.02 * (1 - walkAmt) + walkAmt * Math.abs(Math.sin(stride)) * 0.07;
 			body.rotation.z = walkAmt * Math.sin(stride) * 0.1;
 			can.visible = s.carry;
-			if (!armR) can.rotation.x = waterAmt * 0.9;
+			if (!armR) can.rotation.x = waterAmt * 1.1;
 
 			// 被點到會開心地跳一下、轉一圈
 			if (s.jump < 0.7 && !asleep) {
@@ -314,15 +314,15 @@ export function buildKeeper(kind: Keeper, variant: number, mat: THREE.Material, 
 				// 看螢幕的時候在打字；Claude 在做事時打得特別快
 				const typing = !asleep && !away && Math.abs(headYaw) > 0.3 ? 1 : 0;
 				const speed = s.busy === 'working' ? 26 : 16;
-				// 走路時兩手前後擺；拿著壺的右手往前伸，澆水時再抬高一點
+				// 走路時兩手前後擺；拿著壺的右手稍微往前，澆水時只抬一點點，壺嘴往下倒
 				const swing = Math.sin(stride) * 0.5 * walkAmt;
 				armL.rotation.x = -typing * 0.9 + Math.sin(t * speed + phase) * 0.12 * typing - sit * 0.2 + swing;
-				armR.rotation.x = s.carry ? -0.5 - waterAmt * 0.5 : -typing * 0.9 + Math.sin(t * speed + phase + 1.6) * 0.12 * typing - sit * 0.2 - swing;
+				armR.rotation.x = s.carry ? -0.3 - waterAmt * 0.2 : -typing * 0.9 + Math.sin(t * speed + phase + 1.6) * 0.12 * typing - sit * 0.2 - swing;
 				// 等你回覆的時候舉起左手揮一揮
 				const wave = s.busy === 'waiting' && !away ? 1 : 0;
 				armL.rotation.z = -0.15 - sit * 0.1 - wave * (2.3 + Math.sin(t * 6 + phase) * 0.3);
 				armR.rotation.z = 0.15 + sit * 0.1;
-				can.rotation.x = s.carry ? 0.5 + waterAmt * 0.9 : 0;
+				can.rotation.x = s.carry ? 0.3 + waterAmt * 1.1 : 0;
 			}
 			if (lamp && lampMat) {
 				const blink = s.busy === 'working' ? Math.sin(t * 12 + phase) > 0 : Math.sin(t * 3 + phase) > 0.6;
