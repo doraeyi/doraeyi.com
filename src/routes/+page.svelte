@@ -224,7 +224,7 @@
 		view = key;
 		// 'all'：滾輪拉遠到全景，資訊卡收起來
 		if (key === 'all') panel = false;
-		else if (data.projects.some((p) => p.key === key)) {
+		else if (key === 'about' || data.projects.some((p) => p.key === key)) {
 			remember();
 			panel = true;
 		}

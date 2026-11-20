@@ -617,6 +617,8 @@ export function createRoom(
 			keep(new THREE.MeshBasicMaterial({ map: keep(nameTexture(world.handle)), transparent: true, depthWrite: false }))
 		);
 		plate.position.set(0, WALL_H - 0.32, fz + 0.045);
+		// 點名牌或玄關是「關於我」；沒有這塊的話，點下去會穿過玄關點到後面房間的地板，打開莫名其妙的卡片
+		addHit('about', hallX, PLINTH + WALL_H / 2, back + buildD / 2, fw, WALL_H, buildD);
 		g.add(plate);
 		wallShade(foyer.x0, back + T + 0.02, foyer.x1, back + T + 0.02);
 		addBlob(hallX - potX, back + buildD - 0.45, 0.7, PLINTH + 0.06);
@@ -1744,7 +1746,11 @@ export function createRoom(
 	const cam = reduced
 		? { ...goal, target: goal.target.clone() }
 		: { target: goal.target.clone(), dist: goal.dist * 1.7, yaw: goal.yaw + 0.7, pitch: 1.15 };
+	// 實際用來畫的鏡頭：再追 cam 一次。兩段一起追，起步會慢慢加速（ease-in-out），不會一換目標就猛拉過去
+	const view = { target: cam.target.clone(), dist: cam.dist, yaw: cam.yaw, pitch: cam.pitch };
 	const user = { yaw: 0, pitch: 0, zoom: 1 };
+	// 使用者轉的角度、滾輪縮放也平滑跟過去：滾一格不會一下跳一截，換停靠點時歸零也是慢慢歸
+	const userNow = { yaw: 0, pitch: 0, zoom: 1 };
 	const shift = { x: 0, y: 0 };
 	// QR 模式把畫面往上推一點，下面留給說明卡
 	// 直式手機看房間：房間在後排、上面只有夜空，把房間往上挪一點，下面多露出一些地毯
@@ -1809,37 +1815,26 @@ export function createRoom(
 	}
 
 	/**
-	 * 從側邊滑到 P 的進度：先在側邊停久一點讓人看清楚一堆浮著的方塊，接著越滑越快，
-	 * 在最後一刻衝進 P、衝過頭一點點再彈回來，方塊「喀」一聲拼起來
+	 * 鏡頭從原本的位置直接滑到 P 的進度：慢慢起步、中間快、快到時放慢，
+	 * 最後衝過頭一點點再彈回來，方塊「喀」一聲拼起來。不繞到側邊，方塊就在眼前從地上往上長
 	 */
 	const arrive = (qq: number) => {
-		const k = clamp((qq - 0.4) / 0.48, 0, 1);
-		if (qq < 0.88) return Math.pow(k, 1.8);
+		if (qq < 0.88) return smooth(clamp((qq - 0.05) / 0.83, 0, 1));
 		const m = clamp((qq - 0.88) / 0.12, 0, 1);
-		return 1 + 0.035 * Math.sin(m * Math.PI * 2) * (1 - m) * (1 - m);
+		return 1 + 0.03 * Math.sin(m * Math.PI * 2) * (1 - m) * (1 - m);
 	};
 	// 使用者在 QR 模式拖曳時偏離 P 多少；放開就彈回去
 	const peek = { yaw: 0, pitch: 0, max: 0 };
-	const side = new THREE.Vector3();
 	const dirNow = new THREE.Vector3();
 	/** lockAge：對準後過了幾秒（還沒對準是 -1），用來讓畫面最後往前頓一下 */
 	function applyCamera(t: number, lockAge = -1) {
 		const idle = !reduced && t - lastInput > 5 ? Math.sin(t * 0.18) * 0.06 : 0;
-		let yaw = cam.yaw + user.yaw + idle;
-		let pitch = clamp(cam.pitch + user.pitch, 0.18, 1.25);
-		let r = cam.dist * user.zoom;
-		lookTarget.copy(cam.target);
-		// 變身的運鏡：先繞到側邊、壓低（看得到一堆方塊從房子裡浮上來），再滑到 P，方塊在最後一刻拼成 QR
-		// 一開始鏡頭先不動，讓人看到地板上的 QR 圖案浮現、地磚開始被拔起來
-		const a = reduced ? 0 : smooth(clamp((q - 0.1) / 0.4, 0, 1));
+		let yaw = view.yaw + userNow.yaw + idle;
+		let pitch = clamp(view.pitch + userNow.pitch, 0.18, 1.25);
+		let r = view.dist * userNow.zoom;
+		lookTarget.copy(view.target);
+		// 變身的運鏡：從原本的位置一路平滑滑到 P，地上的 QR 格子一邊從中間往上長、一邊在最後一刻拼成 QR
 		const b = reduced ? smooth(q) : arrive(q);
-		if (a > 0) {
-			side.set(0, QR_Y + 1.2, 0);
-			yaw = lerp(yaw, QR_YAW + 1.6, a);
-			pitch = lerp(pitch, 0.32, a);
-			r = lerp(r, qrCam.r * 0.8, a);
-			lookTarget.lerp(side, a);
-		}
 		if (b !== 0) {
 			yaw = lerp(yaw, QR_YAW + peek.yaw, b);
 			pitch = lerp(pitch, QR_PITCH + peek.pitch, b);
@@ -1961,7 +1956,8 @@ export function createRoom(
 			pull = damp(pull, 0, 0.9, dt);
 			if (!qrOn && pull >= 1) toggleQr(true);
 			else if (qrOn && pull <= -1) toggleQr(false);
-			const qGoal = qrOn ? 1 - Math.max(0, -pull) * 0.2 : Math.max(0, pull) * 0.2;
+			// 往下拉的預覽：拉一點點不動（不然一縮放到底地板就凸起來，像整塊地基彈一下），拉過四成才開始浮
+			const qGoal = qrOn ? 1 - Math.max(0, -pull) * 0.2 : (Math.max(0, pull - 0.4) / 0.6) * 0.15;
 			// 變身是一段固定長度的動畫（約 3.4 秒，變回去 1.6 秒），等速往前走，每一段效果自己決定快慢；
 			// 往下拉一半的預覽也走同一條時間軸，所以拉的時候就看得到方塊開始浮上來
 			const rate = reduced ? 1 / 0.6 : qGoal > q ? 1 / 3.4 : 1 / 1.6;
@@ -1980,13 +1976,22 @@ export function createRoom(
 		}
 
 		// 鏡頭慢慢滑向目標；系統設定減少動態時改成很快就到，不要大幅度地飛過去
-		const k = reduced ? 12 : 2.6;
+		const k = reduced ? 12 : 2.2;
 		cam.target.x = damp(cam.target.x, goal.target.x, k, dt);
 		cam.target.y = damp(cam.target.y, goal.target.y, k, dt);
 		cam.target.z = damp(cam.target.z, goal.target.z, k, dt);
 		cam.dist = damp(cam.dist, goal.dist, k, dt);
 		cam.yaw = damp(cam.yaw, goal.yaw, k, dt);
 		cam.pitch = damp(cam.pitch, goal.pitch, k, dt);
+		view.target.lerp(cam.target, 1 - Math.exp(-k * 1.3 * dt));
+		view.dist = damp(view.dist, cam.dist, k * 1.3, dt);
+		view.yaw = damp(view.yaw, cam.yaw, k * 1.3, dt);
+		view.pitch = damp(view.pitch, cam.pitch, k * 1.3, dt);
+		// 拖曳要跟手，縮放稍微滑一下就好
+		const ku = reduced ? 30 : 16;
+		userNow.yaw = damp(userNow.yaw, user.yaw, ku, dt);
+		userNow.pitch = damp(userNow.pitch, user.pitch, ku, dt);
+		userNow.zoom = Math.exp(damp(Math.log(userNow.zoom), Math.log(user.zoom), ku * 0.6, dt));
 		const sg = shiftGoal();
 		shift.x = damp(shift.x, sg.x, k, dt);
 		shift.y = damp(shift.y, sg.y, k, dt);
